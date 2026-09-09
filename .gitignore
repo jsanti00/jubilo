@@ -1,0 +1,20 @@
+# Secretos
+.env
+*.env
+
+# Documentos de personas: historias laborales, extractos de fondos, reportes.
+# Nunca entran a este repositorio, ni siquiera por error.
+*.pdf
+*.xlsx
+*.xls
+*.docx
+_entrada/
+extracciones/
+historiales*/
+
+# Ruido del sistema y de Python
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
