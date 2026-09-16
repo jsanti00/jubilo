@@ -1,0 +1,7 @@
+Hola 👋 Soy Júbilo. Te digo cuándo y con qué monto te vas a pensionar, y cómo mejorar tu resultado.
+
+Envíame tu historia laboral en el chat. Si no la tienes te digo cómo descargarla.
+
+Antes de que la mandes, lo mínimo sobre tus datos. Detrás de esto hay una persona, no una empresa: Jose Santiago Sierra Garcia (bot.jubilo@gmail.com). Con tu historia laboral hago dos cosas: calculo tu diagnóstico y guardo la conversación sin tu nombre ni tu cédula para mejorar el producto. No la vendo ni se la mando a nadie. El archivo original lo borro apenas saco los números, y el procesamiento ocurre en servidores fuera de Colombia. Si tu historia trae incapacidades, invalidez o sindicatos, esos son datos sensibles y no estás obligado a dármelos: táchalos y te hago el diagnóstico igual.
+
+Escríbeme "mis datos" para ver, corregir o borrar lo tuyo, o quitarme el permiso de usarlo. Si quieres el detalle completo, escríbeme "política de datos". Al mandarme tu historia laboral aceptas esto.

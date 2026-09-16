@@ -1,7 +1,7 @@
 # Manual interno de políticas y procedimientos de tratamiento de datos personales
 
-> **Documento interno. No se muestra al usuario.** Lo que el usuario ve es `../kit-contexto/aviso-de-privacidad.md`.
-> **Versión:** 1.0. **Fecha de entrada en vigencia:** 2026-07-27. **Estado:** borrador operativo, pendiente de revisión de abogado de protección de datos (ver sección 5).
+> **Documento interno. No se muestra al usuario.** Lo que el usuario ve son dos documentos derivados de este: el aviso corto (`../kit-contexto/aviso-de-privacidad.md`, que va dentro del mensaje de bienvenida) y la política de tratamiento en versión de usuario (`../kit-contexto/politica-de-datos-usuario.md`, que el agente le manda cuando escribe "política de datos"). Ninguno de los dos puede prometer menos que este manual.
+> **Versión:** 1.0. **Fecha de entrada en vigencia:** 2026-07-27. **Última actualización:** 2026-09-16. **Estado:** borrador operativo, pendiente de revisión de abogado de protección de datos (ver sección 5).
 > **Por qué existe:** el responsable está obligado a adoptar un manual interno de políticas y procedimientos para garantizar el cumplimiento de la ley y, en especial, para la atención de consultas y reclamos. *Fuente: Ley 1581 de 2012, art. 17 lit. k.* Confianza alta.
 > **Qué recoge además:** el contenido mínimo de la política de tratamiento de la información del *Decreto 1377 de 2013, art. 13*. Confianza alta.
 > **Documentos hermanos:** `procedimiento-incidentes-seguridad.md` (mismo folder) y `../kit-contexto/datos-y-alcance.md` (sustento normativo detallado).
@@ -15,16 +15,16 @@
 **Responsable del tratamiento.** Jose Santiago Sierra Garcia, persona natural. No hay sociedad detrás del piloto y no se representa que la haya. *Decisión de Santiago del 2026-07-27.*
 
 - Ser persona natural no atenúa ninguna obligación: la ley aplica al tratamiento hecho por personas naturales y jurídicas por igual. *Fuente: Ley 1581 de 2012, art. 2.* Confianza alta.
-- **Datos de contacto publicados:** correo electrónico `[POR DEFINIR]`. Es el contenido mínimo del *Decreto 1377 de 2013, art. 15 num. 1*, y sin él el aviso de privacidad no se puede publicar. Es un dato operativo pendiente, no una decisión abierta.
+- **Datos de contacto publicados:** correo electrónico `bot.jubilo@gmail.com`. *Definido el 2026-09-16.* Es el contenido mínimo del *Decreto 1377 de 2013, art. 15 num. 1*, y sin él el aviso de privacidad no se podría publicar.
 - **Persona que atiende peticiones:** el propio responsable. No hay área ni delegado. Cumple el requisito de identificar al área o persona encargada del *Decreto 1377 de 2013, art. 13 num. 4*. Confianza alta.
 
 **Alcance.** Aplica a todo el tratamiento de datos personales que ocurre en el piloto de Júbilo: el canal de Telegram, los archivos que el usuario envía, los datos extraídos de ellos y las conversaciones anonimizadas.
 
-**Arquitectura real, porque define el riesgo.** El piloto corre en un canal de Telegram con Claude Code como motor de razonamiento, **sin servidor propio ni base de datos administrada**. El agente lee la historia laboral (PDF o imagen), extrae un JSON con los datos del caso y **borra el archivo original apenas termina la extracción** (*decisión de Santiago del 2026-07-21, opción B*). El procesamiento ocurre **fuera de Colombia**. Los datos que se conservan viven en el equipo del responsable y en la infraestructura del proveedor del modelo y del canal de mensajería.
+**Arquitectura real, porque define el riesgo.** *Descripción actualizada el 2026-09-16, con la decisión de despliegue del V0 de esa fecha.* El V0 corre como **un bot de Telegram propio, alojado en un VPS que administra el responsable**, con un backend en Python (`bot.py`) que invoca `claude -p` una vez por mensaje. **Hay servidor propio y hay base de datos propia:** una base SQLite en el VPS, donde vive el estado de cada usuario y donde va a vivir el registro de autorizaciones. Es un solo bot para todos los usuarios, con aislamiento por `CLAUDE_CONFIG_DIR`: cada usuario tiene su propia carpeta privada y su propio almacén de sesiones, así que el contexto de un usuario nunca entra en la conversación de otro. El razonamiento sigue corriendo contra una suscripción de Claude en una cuenta dedicada, sin API. El agente lee la historia laboral (PDF o imagen), extrae un JSON con los datos del caso y **borra el archivo original apenas termina la extracción** (*decisión de Santiago del 2026-07-21, opción B*). El procesamiento del modelo sigue ocurriendo **fuera de Colombia**.
 
-**Consecuencia honesta de esa arquitectura:** el responsable **no controla directamente** la infraestructura donde se procesan los datos. Los controles reales están enumerados en la sección 6 y los que faltan están marcados ahí como faltantes, no descritos como si existieran.
+**Consecuencia honesta de esa arquitectura:** las dos capas quedan en manos distintas. El **almacenamiento** pasa a estar bajo control directo del responsable (VPS y SQLite que él administra), mientras el **procesamiento del modelo** sigue ocurriendo en infraestructura de un tercero y fuera de Colombia, fuera de su control directo. Los controles reales están enumerados en la sección 6 y los que faltan están marcados ahí como faltantes, no descritos como si existieran.
 
-**Quién más interviene.** No hay empleados, contratistas ni encargados contratados por el responsable para tratar datos. Los proveedores de infraestructura (mensajería y modelo) actúan de hecho como encargados del tratamiento, sin contrato de transmisión de datos suscrito para este fin. Ver sección 5, punto 2.
+**Quién más interviene.** No hay empleados, contratistas ni encargados contratados por el responsable para tratar datos. Los proveedores de infraestructura (canal de mensajería, proveedor del modelo y proveedor del VPS) actúan de hecho como encargados del tratamiento, sin contrato de transmisión de datos suscrito para este fin. Ver sección 5, punto 2.
 
 ---
 
@@ -68,7 +68,7 @@ La historia laboral es además **información reservada** que solo puede solicit
 
 **Procedimiento obligatorio, en este orden:**
 
-1. El agente muestra el aviso de privacidad **antes** de pedir la historia laboral, una vez por usuario, en el turno inmediatamente anterior a la solicitud del documento.
+1. El agente muestra el aviso de privacidad **dentro del propio mensaje de bienvenida**, el primero de la conversación, antes de pedir la historia laboral. *Cambio del 2026-09-16:* antes iba en el turno inmediatamente anterior a la solicitud del documento; se movió a la bienvenida para que sea imposible mandar el documento sin haber visto el aviso.
 2. Se registra la **fecha, la hora y la versión** del aviso mostrado.
 3. El usuario envía el documento.
 4. Se registra la fecha y hora del envío.
@@ -82,7 +82,7 @@ El par (aviso mostrado, documento enviado) es la prueba de la autorización que 
 - **El servicio nunca se condiciona a la entrega de datos sensibles.** Si el usuario tacha las novedades de salud, el diagnóstico se hace igual con lo que quede. *Fuente: Decreto 1377 de 2013, art. 6 num. 3.* Confianza alta.
 - **Si cambia la finalidad, se pide autorización nueva.** No se reutiliza la anterior. *Fuente: Decreto 1377 de 2013, art. 5.* Confianza alta.
 
-**Versionado del aviso.** Cada cambio material genera una versión nueva. Debe poder reconstruirse **qué versión vio cada usuario**. Versión vigente: 1.0.
+**Versionado del aviso.** Cada cambio material genera una versión nueva. Debe poder reconstruirse **qué versión vio cada usuario**. Versión vigente: 1.1 (desde el 2026-09-16).
 
 ### 3.2 Conservación
 
@@ -171,6 +171,7 @@ Esta es la lista que el aviso de privacidad referencia. Cada punto dice **qué s
 - **Hoy:** el sustento es la autorización expresa e inequívoca del titular para la transferencia (*Ley 1581 de 2012, art. 26 lit. f*), obtenida por el aviso previo que menciona expresamente los servidores fuera de Colombia.
 - **Falta confirmar:** (i) cuál es el acto administrativo vigente de la SIC con la lista de países declarados con nivel adecuado de protección, y si el país de procesamiento está en ella; (ii) si la autorización del lit. f basta cuando los datos pueden ser sensibles, o si además se exige contrato de transmisión de datos con el encargado (*Decreto 1377 de 2013, arts. 24 y 25*).
 - **Qué cambiaría:** si el país está en la lista de adecuados, la autorización deja de ser el sustento y el punto se simplifica. Si se exige contrato de transmisión, hay que suscribirlo con el proveedor de infraestructura antes del piloto, o mover el procesamiento a Colombia.
+- **Nota del 2026-09-16 (cambio de despliegue).** El V0 pasó a correr en un VPS propio con base SQLite propia, así que el **almacenamiento** quedó bajo control directo del responsable mientras el **procesamiento del modelo** sigue fuera de Colombia. Esa separación entre las dos capas **debe volver a mirarse** en la revisión del abogado, en particular si el contrato de transmisión de datos sigue siendo exigible y, si lo es, respecto de cuál de las dos capas. El análisis de arriba no se reescribió aquí a propósito: lo actualiza el abogado.
 
 **2. Calificación de los proveedores de infraestructura como encargados del tratamiento.**
 
@@ -229,7 +230,7 @@ Esta es la lista que el aviso de privacidad referencia. Cada punto dice **qué s
 **11. Textos legales que faltan y que el abogado debe producir o validar.**
 
 1. La **política de tratamiento completa en versión de usuario**. El aviso promete "escríbeme política de datos y te la paso" y esa versión hoy no existe: existe este manual, que es otro documento y otro tono.
-2. El **texto legal definitivo del aviso de privacidad**, hoy en versión 1.0 de producto.
+2. El **texto legal definitivo del aviso de privacidad**, hoy en versión 1.1 de producto.
 3. Los **términos y condiciones** del servicio, que no existen.
 4. La validación de que este manual **cubre el contenido mínimo** del *Decreto 1377 de 2013, art. 13*, incluida la vigencia de la base de datos, que hoy se declara como indefinida atada a finalidad.
 
@@ -253,15 +254,15 @@ El deber es conservar la información con las condiciones de seguridad necesaria
 
 **Lo que falta, dicho sin maquillaje.** Ninguno de estos existe hoy y ninguno debe describirse al usuario como si existiera:
 
-1. **Cifrado en reposo** de los JSON conservados en el equipo del responsable.
-2. **Control de acceso documentado** al equipo donde viven los datos (política de bloqueo, contraseña, cifrado de disco verificado).
+1. **Cifrado en reposo** de los JSON y de la base SQLite conservados en el VPS del responsable.
+2. **Control de acceso documentado** al VPS donde viven los datos (acceso por llave, cierre de puertos, cifrado de disco verificado).
 3. **Custodia del token del bot de Telegram**, que hoy es el punto de compromiso más directo del canal.
 4. **Registro de acceso o log de auditoría** que permita saber quién vio qué y cuándo.
 5. **Respaldo y plan de recuperación**, hoy inexistentes, con la contrapartida de que un respaldo mal manejado crea copias que después hay que borrar.
 6. **Verificación técnica del borrado** en la infraestructura de terceros (ver sección 5, punto 3).
-7. **Segregación entre los datos del piloto y el resto del entorno personal** del responsable.
+7. **Segregación entre los datos del piloto y el resto del entorno personal** del responsable. *Nota del 2026-09-16:* el VPS propio ya separa los datos del piloto del equipo personal, y el aislamiento por `CLAUDE_CONFIG_DIR` separa a los usuarios entre sí, pero la segregación no está documentada ni verificada.
 
-**Criterio de priorización sugerido antes del piloto:** los puntos 2 y 3 son los que convierten un descuido cotidiano en una violación de datos y son baratos. El 1 y el 4 dependen de decidir dónde viven los JSON.
+**Criterio de priorización sugerido antes del piloto:** los puntos 2 y 3 son los que convierten un descuido cotidiano en una violación de datos y son baratos. El 1 y el 4 ya no dependen de decidir dónde viven los JSON (viven en el VPS, decisión del 2026-09-16), sino de implementarse ahí.
 
 ---
 
@@ -305,10 +306,11 @@ Vive en `procedimiento-incidentes-seguridad.md`, sección 6. No se duplica aquí
 
 - **Entrada en vigencia:** 2026-07-27.
 - **Vigencia de la base de datos:** indefinida, atada a la finalidad declarada, con revisión anual documentada (sección 3.2). Ver sección 5, punto 11.4, sobre la validación de esta forma de declararla.
-- **Versión actual:** 1.0.
+- **Versión actual:** 1.1.
 - **Cuándo se actualiza obligatoriamente:** al definir el correo de contacto; al recibir la revisión del abogado; al cambiar la arquitectura del piloto; al constituirse una sociedad; al cerrarse cualquier marca `[VERIFICAR]` de la sección 5; y tras cada incidente que deje lecciones.
 - **Quién lo actualiza:** el responsable.
 
 | Versión | Fecha | Cambio |
 |---|---|---|
 | 1.0 | 2026-07-27 | Versión inicial, con las siete decisiones de producto del 2026-07-27 incorporadas |
+| 1.1 | 2026-09-16 | Se definió el correo de contacto (`bot.jubilo@gmail.com`) y cambió la arquitectura del piloto a VPS propio con base SQLite, dos de los disparadores de actualización obligatoria. El aviso pasó a versión 1.1 y se movió dentro del mensaje de bienvenida. Se creó la política de tratamiento en versión de usuario, que era el pendiente 11.1 de la sección 5. Nota nueva en la sección 5 punto 1 sobre la separación entre almacenamiento y procesamiento |
