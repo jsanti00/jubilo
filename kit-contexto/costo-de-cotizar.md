@@ -115,7 +115,7 @@ Los tres tipos están definidos en `independientes.md` sección 1 y no se redefi
 |---|---|---|
 | Contratista de prestación de servicios | 40% del valor mensualizado del contrato, sin IVA | El valor del contrato y si hay IVA incluido |
 | Independiente por cuenta propia | 40% de los ingresos **después de costos** | Si usa costos reales (art. 107 ET) o presunción UGPP, porque cambia la base |
-| Rentista de capital | 40% de los ingresos **después de costos**, salvo dividendos y participaciones que van completos | Qué parte del ingreso son dividendos, porque esa parte no admite presunción de costos |
+| Rentista de capital | 40% de los ingresos **después de costos**, con dividendos y participaciones **incluidos** en la presunción del 28,08% | Si sus costos reales superan el 28,08% del bruto, porque solo entonces le sirve soportarlos |
 
 **Órdenes de magnitud para 2026** (SMLMV de $1.750.905; cifras producidas por `calculadora/costo_y_retorno.py`, no calculadas por el agente):
 

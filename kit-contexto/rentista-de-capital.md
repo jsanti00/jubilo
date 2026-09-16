@@ -1,6 +1,6 @@
 # Rentista de capital - Documento 25 del kit
 
-> **Última actualización:** 2026-07-28. **Estado:** borrador verificado contra fuente primaria (Decreto 1601 de 2022 en PDF del Ministerio de Salud, Decreto 379 de 2026 en el Gestor Normativo, Resolución UGPP 532 de 2024 en la compilación de la Secretaría Jurídica Distrital, ABC de rentistas de capital de ugpp.gov.co).
+> **Última actualización:** 2026-07-28. **Estado:** borrador verificado contra fuente primaria (Decreto 1601 de 2022 en PDF del Ministerio de Salud, Decreto 379 de 2026 en el Gestor Normativo, Resolución UGPP 532 de 2024 en la compilación de la Secretaría Jurídica Distrital, ABC de rentistas de capital de ugpp.gov.co). **Actualizado el 2026-09-16:** el coeficiente de rentistas y el alcance sobre dividendos quedaron verificados en la calculadora oficial de IBC de la UGPP; la evidencia y el límite de esa prueba están en `verificacion/2026-09-16-coeficiente-rentista-ugpp.md`.
 > **Por qué existe:** el rentista de capital es el segmento de mayor disposición a pagar del producto y hasta hoy vivía en una sola sección de `independientes.md`. Es también el perfil donde el agente más fácil se equivoca, porque confunde tres cosas distintas: **patrimonio**, **renta** y **base de cotización**.
 > **Relación con `independientes.md`:** el rentista **es** un independiente. Todo lo general del segmento (el 40% como base mínima, las sanciones de la UGPP, cómo se ve en la historia laboral, las palancas de asesoría) vive allá y **no se repite aquí**. Este documento cubre solo lo que es propio del rentista: qué cuenta como renta de capital, cómo se depura, el caso de los dividendos, y dónde está la frontera con el independiente por cuenta propia.
 
@@ -107,9 +107,24 @@ Es el punto más movedizo del documento y el que más cambió en 2026. Conviene 
 
 **Capa 3. La resolución.** La **Resolución UGPP 532 del 22 de mayo de 2024** es la que determina el esquema. Su artículo 2 literal a) dice, literalmente: "Cuando los ingresos del obligado provengan de rentas de capital, adoptará el porcentaje registrado para 'Rentistas de Capital', en el último renglón de la tabla". Es decir, **el rentista sí tiene su propio coeficiente dentro del esquema**. *Fuente: Resolución 532 de 2024 art. 2 lit. a. La resolución sí está publicada en el sitio oficial (`ugpp.gov.co/normas/resolucion-532-de-2024/`), pero esa página es una ficha que no expone el texto ni el anexo de coeficientes; el articulado se leyó en la compilación de la Secretaría Jurídica Distrital de Bogotá (`alcaldiabogota.gov.co/sisjur`).* **Confianza: media-alta en el texto** (compilación oficial, no la fuente que expide).
 
-**El coeficiente que el agente usa: 28,08% de costos presuntos sobre los ingresos brutos de renta de capital.** Es la cifra en la que coinciden varias fuentes secundarias especializadas (Forvis Mazars, La República y prensa contable convergente). **No se leyó en el texto literal de la resolución**, porque la tabla de coeficientes no está en acceso libre. Ver la marca de abajo antes de usarla en una conversación.
+**El coeficiente que el agente usa: 28,08% de costos presuntos sobre los ingresos brutos de renta de capital.** Está leído en fuente oficial de la UGPP: su calculadora de IBC (`ugpp.gov.co/calculadora-ibc`) trae la tabla completa de coeficientes en el selector "Costos asociados: esquema presunción de costos", y el renglón de rentistas carga el valor 0,2808. *Fuente: HTML de `ugpp.gov.co/calculadora-ibc`, capturado el 2026-09-16 y archivado en `verificacion/evidencia/`.* **Confianza: alta en la cifra**, porque es el instrumento oficial de la entidad que fiscaliza. Con una salvedad que importa: la calculadora **no cita la resolución ni el decreto**, así que la cifra está verificada contra la conducta oficial de la UGPP y no contra el texto del anexo.
 
-**La tabla completa por actividad CIIU existe y no se reproduce aquí.** Trae un coeficiente por cada sección de la CIIU revisión 4 adaptada para Colombia, más un renglón de "No clasificadas en otra parte" y el renglón final de rentistas. No está en acceso libre: **se consigue pidiéndosela a la UGPP por su portal de transparencia y derecho de petición.** Mientras eso no ocurra, el agente no cita coeficientes de otras actividades.
+**La fórmula que la UGPP aplica, leída en el código de su propia calculadora:**
+
+```
+costos_presuntos = ingreso_bruto * 0,2808
+descuento        = el mayor entre costos reales digitados y costos presuntos
+IBC              = (ingreso_bruto - descuento) * 40%
+piso: 1 SMLMV                               techo: 25 SMLMV
+```
+
+*Fuente: JavaScript de la calculadora de IBC de la UGPP, archivado con la captura.* **Confianza: alta.**
+
+**Consecuencia práctica, y es consejo que sirve:** para el rentista los costos reales solo mejoran su posición si **superan el 28,08% del ingreso bruto**. Por debajo de ese umbral la presunción da un descuento mayor y la calculadora la aplica sola. Para un rentista con inmuebles (administración, predial, seguros, reparaciones) pasar ese umbral es normal; para uno que vive de dividendos o de CDT es difícil.
+
+**El renglón de rentistas es el descuento más bajo de toda la tabla:** 28,08% contra un rango de 56,01% a 68,85% en las demás actividades. Con el mismo ingreso bruto, el rentista cotiza sobre una base más alta que cualquier otro independiente. No es un error de la tabla, es su diseño: la renta de capital tiene menos costos asociados que una actividad productiva.
+
+**La tabla completa por actividad CIIU sí está en acceso libre, y dejó de ser un hueco el 2026-09-16.** Son 24 renglones: las 21 secciones de la CIIU revisión 4 adaptada para Colombia, más "No clasificados en otra parte", más el de rentistas, más uno de "Presunción media". Viven en el selector de la calculadora oficial. La tabla completa está en `independientes.md` sección 2 bis, que es donde corresponde porque sirve a todo el segmento; este documento solo usa el renglón de rentistas.
 
 **La cadena de vigencia, que es rara y hay que explicarla bien.** La resolución cambió de fecha de aplicación tres veces:
 
@@ -121,15 +136,20 @@ Es el punto más movedizo del documento y el que más cambió en 2026. Conviene 
 
 *Fuente: Resolución 532 de 2024 art. 5 con sus modificaciones, en la misma compilación.* Ese decreto es el 379 de 2026, expedido el 7 de abril de 2026. **La lectura que el agente usa: la Resolución 532 aplica desde el 1 de mayo de 2026.**
 
-`[VERIFICAR]` **Respuesta operativa:** el agente trabaja con el esquema de la **Resolución UGPP 532 de 2024**, un coeficiente de costos presuntos de **28,08%** para rentas de capital, y aplicación **desde el 1 de mayo de 2026**. Presenta las tres cosas como lo que son: la cifra viene de fuentes secundarias coincidentes y no del texto de la resolución, así que el agente la da **como estimación declarada**, nunca como dato oficial, y siempre ofrece las dos salidas firmes: usar los **costos reales** del usuario (que no dependen de ningún coeficiente) o verificar en la **calculadora de IBC de la UGPP** (`ugpp.gov.co/calculadora-ibc`), que es oficial y gratuita.
+`[VERIFICAR]` **Respuesta operativa:** el agente trabaja con el esquema de la **Resolución UGPP 532 de 2024**, un coeficiente de costos presuntos de **28,08%** para rentas de capital, y aplicación **desde el 1 de mayo de 2026**. El coeficiente ya no es estimación: está verificado en la calculadora oficial de la UGPP. Lo único que sigue sin confirmar es **la fecha**. El agente sigue ofreciendo las dos salidas firmes: usar los **costos reales** del usuario o verificar en la **calculadora de IBC de la UGPP** (`ugpp.gov.co/calculadora-ibc`), que es oficial y gratuita.
 
-**Falta confirmar, tres cosas distintas:**
+**Cerrado el 2026-09-16, contra la calculadora oficial de IBC de la UGPP** (evidencia y límites de la prueba en `verificacion/2026-09-16-coeficiente-rentista-ugpp.md`):
 
-1. **El coeficiente.** El 28,08% no se leyó en el texto literal ni en el anexo de la resolución. La tabla no está en acceso libre y se conseguiría por el portal de transparencia de la UGPP.
-2. **La fecha.** Ninguna fuente reconcilia la cadena completa, y circulan **tres fechas para la misma resolución**: **1 de noviembre de 2024** (texto original), **1 de junio de 2025** (Resolución UGPP 1125 de 2024) y **1 de mayo de 2026** (por remisión al Decreto 379 del 7 de abril de 2026). El agente usa la tercera, pero **no la presenta como fecha limpia**: dice que la aplicación del esquema se aplazó varias veces y que la fecha vigente depende de la publicación del Decreto 379 en el Diario Oficial, cuya fecha exacta no se confirmó (se conoce la de expedición, 7 de abril de 2026). Lo que sí quedó verificado en el texto del art. 5 de la resolución, con sus dos modificaciones, es la **mecánica** del aplazamiento: rige "a partir del mes siguiente a la publicación en el Diario Oficial del decreto que modifique el artículo 3.2.7.5 del Decreto 780 de 2016".
-3. **El alcance del coeficiente sobre dividendos** (sección 6).
+1. **El coeficiente.** 28,08% leído en el instrumento oficial de la entidad que fiscaliza, no en fuentes secundarias. Queda un residuo: la calculadora no cita el acto administrativo, así que el agente no atribuye la cifra a un artículo concreto. Dice "el coeficiente que aplica la UGPP en su calculadora oficial", no "el artículo X de la Resolución 532 fija 28,08%". La diferencia importa si el usuario está en fiscalización, porque allá lo que se discute es el acto.
+2. **El alcance sobre dividendos** (sección 6), que quedó resuelto en sentido contrario al anexo derogado: el renglón vigente los **incluye**.
 
-**Si cambia:** cambia el porcentaje de costos que se descuenta antes del 40%, es decir el IBC y el aporte mensual del usuario. No cambia la lógica de tres pasos ni la obligación de cotizar. El error que esta marca existe para evitar es que el agente dé el marco correcto con una cifra falsa y con cara de dato oficial.
+**Falta confirmar, una sola cosa:**
+
+**La fecha.** Ninguna fuente reconcilia la cadena completa, y circulan **tres fechas para la misma resolución**: **1 de noviembre de 2024** (texto original), **1 de junio de 2025** (Resolución UGPP 1125 de 2024) y **1 de mayo de 2026** (por remisión al Decreto 379 del 7 de abril de 2026). El agente usa la tercera, pero **no la presenta como fecha limpia**: dice que la aplicación del esquema se aplazó varias veces y que la fecha vigente depende de la publicación del Decreto 379 en el Diario Oficial, cuya fecha exacta no se confirmó (se conoce la de expedición, 7 de abril de 2026). Lo que sí quedó verificado en el texto del art. 5 de la resolución, con sus dos modificaciones, es la **mecánica** del aplazamiento: rige "a partir del mes siguiente a la publicación en el Diario Oficial del decreto que modifique el artículo 3.2.7.5 del Decreto 780 de 2016".
+
+**Dato que refuerza la fecha sin cerrarla:** al 2026-09-16 la calculadora oficial de la UGPP **ya está aplicando** el esquema de presunción, con parámetros de 2026 (SMLMV de 1.750.905 y tope de 25 SMLMV). Es conducta consistente con que el esquema rige, no prueba de su fecha de inicio.
+
+**Si cambia:** afectaría desde cuándo es exigible el esquema, no el coeficiente ni la lógica de tres pasos ni la obligación de cotizar. El error que esta marca existe para evitar ya no es dar una cifra falsa con cara de dato oficial, porque la cifra quedó verificada: es afirmar una fecha de vigencia que no está confirmada.
 
 **Las dos vías son alternativas, y la elección es del aportante.** Puede usar costos reales soportados en vez del coeficiente presunto, siempre que cumplan el art. 107 del Estatuto Tributario y no excedan lo declarado en renta. *Fuente: Resolución 532 de 2024 art. 3, y Ley 2277 de 2022 art. 89 inciso 2 y par. 1 inciso 2.* Para un rentista con inmuebles esto suele ser lo más conveniente: administración, predial, seguros y reparaciones son costos reales y documentables.
 
@@ -143,11 +163,15 @@ Los dividendos son renta de capital para efectos de cotización. La propia calcu
 
 Lo que cambió, y por eso el agente debe ser cuidadoso: en el esquema del **Decreto 1601 de 2022** el renglón de rentistas del anexo decía expresamente "Rentistas de Capital (No incluye ingresos por dividendos y participaciones)". *Fuente: anexo del Decreto 1601 de 2022, tabla 1, leído en el PDF oficial de minsalud.gov.co.* **Confianza: alta en que esa exclusión existía hasta abril de 2026**, cuando el Decreto 379 derogó ese anexo.
 
-**Qué es exactamente lo nuevo, para no exagerarlo:** un renglón propio de rentistas ya existía en el anexo del Decreto 1601. Lo nuevo del esquema de la Resolución 532 es que **el coeficiente de 28,08% cubriría también los dividendos y participaciones**, que antes quedaban expresamente por fuera. Es un cambio de alcance, no la aparición de una categoría.
+**Qué es exactamente lo nuevo, para no exagerarlo:** un renglón propio de rentistas ya existía en el anexo del Decreto 1601. Lo nuevo del esquema vigente es que **el coeficiente de 28,08% cubre también los dividendos y participaciones**, que antes quedaban expresamente por fuera. Es un cambio de alcance, no la aparición de una categoría.
 
-`[VERIFICAR]` **Respuesta operativa:** el agente dice que los dividendos y participaciones **sí generan base de cotización** como renta de capital, y que bajo el esquema vigente **entrarían en la presunción de costos del 28,08%**, declarando que ese punto viene de fuentes secundarias coincidentes y que conviene confirmarlo con la UGPP o con su contador. Lo que el agente **ya no dice** es "los dividendos se toman completos": esa era la regla del anexo derogado. **Falta confirmar:** el texto del renglón de rentistas de la Resolución 532, para saber si conserva o eliminó el paréntesis de exclusión de dividendos. La tabla no está en acceso libre. **Si cambia:** para un rentista que vive de dividendos, incluirlos o no en la presunción cambia su IBC en más de un cuarto. Es la diferencia entre cotizar sobre el 40% del bruto y sobre el 40% de casi el 72% del bruto. Es la marca de mayor efecto sobre el bolsillo de este documento.
+**El renglón vigente incluye los dividendos, y lo dice con esas palabras.** El selector de la calculadora oficial de la UGPP rotula el renglón así: "Rentistas de Capital incluidos dividendos y participaciones", con coeficiente 0,2808. Es la inversión exacta del paréntesis del anexo del Decreto 1601 de 2022. *Fuente: HTML de `ugpp.gov.co/calculadora-ibc`, capturado el 2026-09-16 y archivado en `verificacion/evidencia/`.* **Confianza: alta.**
 
-**Nota de coherencia con `independientes.md`:** su sección 3 afirma hoy, sin matiz, que "los dividendos y participaciones no admiten presunción de costos: se toman completos". Esa frase describe el anexo del Decreto 1601, derogado el 7 de abril de 2026. **Manda este documento** mientras no se confirme el texto de la Resolución 532.
+**Qué significa para el usuario, con números:** el rentista que vive de dividendos descuenta el 28,08% igual que cualquier otra renta de capital. Sobre 10.000.000 mensuales de dividendos su IBC es de 2.876.800, no de 4.000.000, y su aporte a pensión baja de 640.000 a 460.288.
+
+**Marca cerrada el 2026-09-16.** El agente ya puede afirmar, sin matiz de estimación, que los dividendos y participaciones **generan base de cotización y entran en la presunción de costos del 28,08%**. Lo que no hace es atribuirlo a un artículo: dice que es el renglón que aplica la UGPP en su calculadora oficial. El límite de esa prueba está en `verificacion/2026-09-16-coeficiente-rentista-ugpp.md` sección 5. Lo que el agente **ya no dice** es "los dividendos se toman completos": esa era la regla del anexo derogado.
+
+**Nota de coherencia con `independientes.md`:** su sección 3 quedó corregida el 2026-09-16. Ningún documento del kit sostiene ya que los dividendos se tomen completos.
 
 ## 7. Patrimonio no es ingreso, e ingreso no es base
 
@@ -235,13 +259,13 @@ Antes de la Ley 2277 de 2022, que un rentista tuviera que cotizar no estaba escr
 1. Le pide al usuario el ingreso **neto** (después de costos), no el bruto, y le explica la diferencia con un ejemplo.
 2. Le muestra la cuenta que hizo, no solo el resultado.
 3. Le dice que la cifra oficial la da la calculadora de IBC de la UGPP y que su contador es quien la valida.
-4. Si usa el 28,08% de costos presuntos, **lo declara como estimación** y ofrece la vía de costos reales, que no depende de ningún coeficiente (sección 5). No inventa coeficientes de otras actividades.
+4. Usa el 28,08% de costos presuntos como lo que es, el coeficiente oficial de la UGPP para el renglón de rentistas, y ofrece la vía de costos reales advirtiendo que solo mejora la posición del usuario si superan ese 28,08% del bruto (sección 5). No inventa coeficientes de otras actividades.
 
-**Trabajo pendiente de V1:** un módulo `ibc_rentista.py` que reciba las fuentes de renta y devuelva el IBC con la banda de incertidumbre del coeficiente. Requiere cerrar antes la marca `[VERIFICAR]` de la sección 5, porque un módulo con el coeficiente equivocado es peor que una cuenta hecha a mano y declarada como estimación.
+**Trabajo de V1, ya desbloqueado el 2026-09-16.** Un módulo `ibc_rentista.py` que reciba las fuentes de renta y devuelva el IBC. La marca `[VERIFICAR]` de la sección 5 que lo bloqueaba quedó cerrada en lo que importaba, el coeficiente, así que **ya se puede construir**. Debe implementar la fórmula de la sección 5 tal como la aplica la UGPP: coeficiente de 28,08%, descuento igual al mayor entre costos reales y presuntos, 40% sobre la diferencia, piso de 1 SMLMV y techo de 25 SMLMV. Su banda de incertidumbre ya no es el coeficiente: es la fecha de vigencia del esquema.
 
 ## 13. Fuera de alcance
 
-- **La tabla de coeficientes de presunción de costos por actividad CIIU** (sección 5). No está en acceso libre; se pide a la UGPP por su portal de transparencia. El agente solo maneja el renglón de rentistas, y como estimación declarada.
+- **La tabla de coeficientes por actividad CIIU dejó de estar fuera de alcance el 2026-09-16:** está en acceso libre en la calculadora de IBC de la UGPP, quedó archivada en `verificacion/evidencia/` y los 24 renglones pasaron a `independientes.md` sección 2 bis, que es donde corresponden porque sirven a todo el segmento. Este documento sigue usando solo el renglón de rentistas.
 - **Liquidación de la PILA** del rentista, intereses de mora y planillas.
 - **Clasificación de la actividad económica CIIU** del usuario: la define su declaración de renta y la confirma su contador (sección 8).
 - **Tributación de la renta de capital** (cédula general, dividendos, ganancias ocasionales). Solo se cubre la tributación de la **pensión** y del ahorro pensional, en `tributario-pensional.md`.

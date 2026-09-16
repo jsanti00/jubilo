@@ -141,11 +141,21 @@ Tres lecturas de la tabla, para que nadie tenga que sacarlas de nuevo:
 2. **El resto de la tabla es un pañuelo.** Entre el mínimo y el máximo de las 22 actividades hay menos de 13 puntos, así que clasificar mal la actividad dentro de ese grupo cambia poco. Clasificar mal entre rentista y no rentista cambia todo.
 3. **Qué es el renglón de "Presunción media" no quedó verificado.** No es el promedio simple de las 21 secciones CIIU (62,01%) ni su mediana (62,04%), así que no se le atribuye un método. Es un valor propio del esquema y el agente no lo usa mientras no se sepa cuándo aplica.
 
-## 7. Reproducir esta verificación
+## 7. Reproducir esta verificación y vigilar que el dato no cambie
+
+Hay un script para esto, que es la forma recomendada:
+
+```bash
+bash verificacion/recapturar-calculadora-ugpp.sh
+```
+
+Guarda una captura nueva fechada, **sin reemplazar las anteriores** para conservar la serie, imprime el hash, y compara el renglón de rentistas contra la captura más reciente ya archivada. Si el coeficiente cambió, lista los archivos del kit que hay que actualizar y en qué orden. Si la UGPP cambia la estructura de la página y el renglón deja de encontrarse, avisa y termina con error en vez de guardar una captura muda.
+
+A mano, si se quiere verificar sin el script:
 
 ```bash
 curl -sL -A "Mozilla/5.0" https://www.ugpp.gov.co/calculadora-ibc -o calc.html
 grep -oE '<option[^>]*data-porcent="[^"]*"[^>]*>[^<]*' calc.html
 ```
 
-Si el coeficiente de rentistas cambia, cambia el IBC de todo el segmento. Conviene repetir la captura cuando se construya `ibc_rentista.py` y en cada revisión anual del kit, y guardar la nueva captura al lado de esta en lugar de reemplazarla.
+**Cuándo correrlo:** antes de construir o tocar `ibc_rentista.py`, en cada revisión anual del kit, y cuando salga noticia de una resolución nueva de la UGPP. Si el coeficiente de rentistas cambia, cambia el IBC de todo el segmento.

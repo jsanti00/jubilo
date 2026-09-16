@@ -971,6 +971,39 @@ No se resolvió ninguna de estas aquí. Las cuatro de la sección 6 siguen vigen
 4. **Convenio Iberoamericano: elige el afiliado o aplica de oficio la entidad la vía más favorable** (`bonos-tiempos-publicos-y-exterior.md` s.9). Es la discrepancia CMISS que mantiene a C28 y C60 fuera de alcance.
 5. **Edades de exclusión de la obligación de cotizar del rentista** (50 y 55 años, según el ABC de la UGPP sin artículo citado). El error posible es en la dirección cara: decirle a alguien que no está obligado cuando sí lo estaba.
 
+### 7.8 Actualización del 2026-09-16: cerrado el coeficiente de rentistas
+
+No reescribe el recuento del 2026-07-28 de las secciones 7.6 y 7.7, que queda como registro de esa fecha. Lo corrige por encima.
+
+**Qué se cerró.** Las dos primeras marcas del pendiente del abogado de la sección 7.7, y sin abogado ni derecho de petición:
+
+1. **El coeficiente de costos presuntos de rentas de capital.** 28,08%, leído en la calculadora oficial de IBC de la UGPP, que trae la tabla completa de 24 renglones embebida en su selector de actividad económica. El kit lo venía usando con fuentes secundarias.
+2. **Si los dividendos entran en la presunción.** Sí. El renglón vigente se rotula "Rentistas de Capital incluidos dividendos y participaciones", que es la inversión exacta del paréntesis del anexo derogado del Decreto 1601 de 2022.
+
+*Evidencia, método y límites en `verificacion/2026-09-16-coeficiente-rentista-ugpp.md`, con la captura y su hash en `verificacion/evidencia/`.* Lo que la calculadora no da es el texto del acto administrativo: no cita norma, así que la cifra se atribuye a la conducta oficial de la UGPP.
+
+**Lo que hay que decir de una vez, porque es contraintuitivo: cerrar esta marca no sube ni una celda.** La sección 7.6 anunciaba que una sola verificación tocaba 44 celdas, y es cierto, pero las tocaba por tres vías y ninguna de las tres se completa sola:
+
+| Hueco de 7.6 | Qué le pasó | Celdas |
+|---|---|---|
+| 1. Ningún módulo traduce rentas de capital a IBC | **Desbloqueado, no cerrado.** `ibc_rentista.py` ya se puede construir y `rentista-de-capital.md` s.12 ya trae la fórmula que debe implementar. Mientras no exista el módulo, la celda no se mueve | C17 a C24, C49 a C56 |
+| 2. La regla de patrimonio contra renta no está en el system prompt | **Sin cambio.** No dependía de esta verificación | C17 a C24, C49 a C56 |
+| 6. El rentista tiene documento propio con 5 marcas abiertas | **Mejora sin cambiar de estado.** Baja de 5 marcas a 3, más el residuo de la fecha de vigencia. Con una sola marca abierta la celda sigue siendo parcial bajo el criterio de la sección 1.2 | C17 a C22, C49 a C54 |
+
+**Los porcentajes de cobertura no se recalculan aquí.** Ninguna celda cambió de estado, así que el recuento del 2026-07-28 sigue vigente tal como está. El próximo recuento se hace cuando exista `ibc_rentista.py`, que es el trabajo que esta verificación habilitó.
+
+**Cómo queda el pendiente del abogado de 7.7.** Salen los puntos 1 y 2. Quedan tres, renumerados:
+
+1. **Ganancias ocasionales en el IBC del rentista** (`rentista-de-capital.md` s.2). Dato nuevo, débil pero útil: la calculadora oficial no las menciona ni las excluye. Es ausencia de prueba, no prueba de ausencia.
+2. **Convenio Iberoamericano: elige el afiliado o aplica de oficio la entidad la vía más favorable** (`bonos-tiempos-publicos-y-exterior.md` s.9). Mantiene C28 y C60 fuera de alcance.
+3. **Edades de exclusión de la obligación de cotizar del rentista** (50 y 55 años). La calculadora oficial repite la regla con esas mismas edades y sigue sin citar artículo. El error posible es en la dirección cara.
+
+**Lo que queda para gestión externa, ya sin ser bloqueante de producto:** el texto y anexo de la resolución (respaldo normativo), la fecha de publicación del Decreto 379 en el Diario Oficial, y las dos providencias de la s.11 del documento del rentista, que no son de la UGPP y se consiguen en los buscadores del Consejo de Estado y de la Corte Constitucional.
+
+**Efecto lateral que sí amplía cobertura, aunque no en estas celdas:** la tabla completa por actividad CIIU entró al kit en `independientes.md` s. 2 bis. El agente pasó de poder dar el coeficiente de un solo perfil a poder darlo para cualquier independiente por cuenta propia.
+
+**Lección de método, que vale más que el dato.** La marca llevaba semanas esperando un derecho de petición porque el kit asumió que el anexo no era público. La cifra estaba en el HTML de la herramienta oficial de la entidad, a una descarga de distancia. Antes de escalar una marca a trámite o a abogado, conviene revisar si la entidad ya está aplicando el dato en alguna herramienta pública: una calculadora web tiene que descargar sus parámetros al navegador para poder calcular.
+
 ---
 
 ## 8. Decisión del 2026-09-16: el pensionado sale del universo

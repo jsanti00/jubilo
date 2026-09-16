@@ -14,7 +14,7 @@ Quien cotiza por su cuenta: contratistas por prestación de servicios, trabajado
 |---|---|---|
 | Contratista de prestación de servicios personales | Trabaja por contrato de prestación de servicios | 40% del valor mensualizado del contrato, sin IVA |
 | Independiente por cuenta propia o con contrato distinto | Comerciante, profesional liberal, contratista de obra | 40% de los ingresos **después de descontar costos** |
-| Rentista de capital | Vive de arriendos, intereses, dividendos | 40% de los ingresos **después de descontar costos** |
+| Rentista de capital | Vive de arriendos, intereses, dividendos | 40% de los ingresos **después de descontar costos**, con presunción del 28,08% (s. 2 bis) |
 
 ## 2. Sobre cuánto cotizan: la regla vigente en 2026
 
@@ -40,13 +40,67 @@ IBC = 40% del ingreso (neto de costos cuando aplica)
 
 **Precisión sobre el 27,5% que circula, porque se cita mal:** el anexo del Decreto 1601 de 2022 nunca tuvo una presunción "general" única. Era una **tabla de coeficientes por sección de actividad económica CIIU** (agricultura, construcción, actividades inmobiliarias, etc.), con un renglón final propio para rentistas de capital. El porcentaje que las fuentes contables citan como "general" corresponde a ese renglón de rentistas, no a todas las actividades. *Fuente: anexo del Decreto 1601 de 2022, tabla 1, leído en el PDF oficial de minsalud.gov.co.* **Confianza: alta.** **Y ese anexo ya no rige:** lo derogó el Decreto 379 del 7 de abril de 2026 (art. 2). No se cita como norma vigente.
 
-`[VERIFICAR]` **Respuesta operativa:** los coeficientes vigentes son los de la **Resolución UGPP 532 de 2024**. **Su vigencia ya no está en duda:** el art. 5 de la resolución, en el texto que le dio la **Resolución UGPP 566 de 2025**, la hace regir "a partir del mes siguiente a la publicación en el Diario Oficial del decreto que modifique el artículo 3.2.7.5 del Decreto 780 de 2016", que es el Decreto 379 de 2026, expedido el 7 de abril de 2026. De ahí sale la aplicación desde mayo de 2026. *Fuente: Resolución 532 de 2024 art. 5 con sus modificaciones, consultado en la compilación de la Secretaría Jurídica Distrital de Bogotá.* **Confianza: media-alta** (compilación oficial, no la entidad que expide). **Falta confirmar:** (1) la **tabla de coeficientes**, que no está en acceso libre; la ficha de `ugpp.gov.co` publica la resolución pero no su anexo, y se conseguiría por el portal de transparencia de la UGPP; (2) la fecha de **publicación** del Decreto 379 en el Diario Oficial, que es la que dispara el "mes siguiente" (se conoce la de expedición, no la de publicación). **Si cambia:** cambian los porcentajes de costo por actividad, no la lógica de tres pasos; el agente seguiría dando el marco correcto con el porcentaje equivocado. Detalle completo del segmento de rentistas en `rentista-de-capital.md` sección 5.
+`[VERIFICAR]` **Respuesta operativa:** los coeficientes vigentes son los de la **Resolución UGPP 532 de 2024**. **Su vigencia ya no está en duda:** el art. 5 de la resolución, en el texto que le dio la **Resolución UGPP 566 de 2025**, la hace regir "a partir del mes siguiente a la publicación en el Diario Oficial del decreto que modifique el artículo 3.2.7.5 del Decreto 780 de 2016", que es el Decreto 379 de 2026, expedido el 7 de abril de 2026. De ahí sale la aplicación desde mayo de 2026. *Fuente: Resolución 532 de 2024 art. 5 con sus modificaciones, consultado en la compilación de la Secretaría Jurídica Distrital de Bogotá.* **Confianza: media-alta** (compilación oficial, no la entidad que expide). **Cerrado el 2026-09-16:** la **tabla de coeficientes** sí está en acceso libre, en la calculadora oficial de IBC de la UGPP, y quedó transcrita en la sección 2 bis de este documento. **Falta confirmar:** la fecha de **publicación** del Decreto 379 en el Diario Oficial, que es la que dispara el "mes siguiente" (se conoce la de expedición, no la de publicación), y el texto del anexo como respaldo normativo, porque la calculadora aplica los coeficientes sin citar la norma. **Si cambia:** cambiaría desde cuándo rigen los porcentajes, no los porcentajes mismos ni la lógica de tres pasos. Detalle completo del segmento de rentistas en `rentista-de-capital.md` sección 5.
 
 **Corrección a un error frecuente:** varias fuentes contables dicen que "antes se cotizaba sobre el bruto y ahora sobre el neto". No es cierto: descontar costos antes de aplicar el 40% ya existía desde el Decreto 1601 de 2022. El Decreto 379 de 2026 actualiza el esquema y delega su mantenimiento en la UGPP, no inventa el neteo.
 
 **Ejemplo con números redondos:** contrato de prestación de servicios por $5.000.000/mes -> IBC mínimo = $2.000.000 -> aporte a pensión = $320.000 (16%).
 
 **Historia normativa (para no citar normas muertas):** la regla del 40% estuvo en el art. 244 de la Ley 1955 de 2019, que la **Corte Constitucional declaró inexequible** por violar la unidad de materia (**Sentencia C-068 de 2020**), con efectos diferidos hasta mediados de 2022. La Ley 2277 de 2022 la revivió como ley autónoma. **Nunca cites la Ley 1955 como fuente vigente.**
+
+## 2 bis. La tabla de coeficientes de presunción de costos, completa
+
+Esta tabla estuvo declarada fuera de alcance del kit hasta el 2026-09-16, con el argumento de que no era pública y había que pedírsela a la UGPP por derecho de petición. Resultó que sí es pública: vive embebida en el selector "Costos asociados: esquema presunción de costos" de la calculadora de IBC de la UGPP, que cualquiera puede abrir sin registro.
+
+*Fuente: HTML de `ugpp.gov.co/calculadora-ibc`, capturado el 2026-09-16 y archivado con su hash en `verificacion/evidencia/`. Transcripción automática, no a mano. La ficha de la verificación y el límite de esa prueba están en `verificacion/2026-09-16-coeficiente-rentista-ugpp.md`.* **Confianza: alta en las cifras**, porque es el instrumento oficial de la entidad que fiscaliza. Con una salvedad: la calculadora **no cita la resolución ni el decreto**, así que los coeficientes están verificados contra la conducta oficial de la UGPP y no contra el texto del anexo.
+
+**Cómo se lee.** El porcentaje es el de **costos presuntos** que se descuenta del ingreso bruto antes de aplicar el 40%. Un porcentaje mayor produce un IBC menor. Son 24 renglones: las 21 secciones de la CIIU revisión 4 adaptada para Colombia, más "No clasificados en otra parte", más el de rentistas, más uno de "Presunción media".
+
+| CIIU | Actividad | Costos presuntos |
+|---|---|---|
+| A | Agricultura, ganadería, caza, silvicultura y pesca | 68,85% |
+| B | Explotación de minas y canteras | 56,39% |
+| C | Industrias manufactureras | 62,34% |
+| D | Suministro de electricidad, gas, vapor y aire acondicionado | 60,30% |
+| E | Distribución de agua; evacuación y tratamiento de aguas residuales, gestión de desechos y saneamiento ambiental | 65,15% |
+| F | Construcción | 62,89% |
+| G | Comercio al por mayor y menor; reparación de vehículos automotores y motocicletas | 66,97% |
+| H | Transporte y almacenamiento (sin transporte de carga por carretera) | 63,79% |
+| I | Alojamiento y servicios de comida | 61,67% |
+| J | Información y comunicaciones | 61,17% |
+| K | Actividades financieras y de seguros | 60,65% |
+| L | Actividades inmobiliarias | 61,73% |
+| M | Actividades profesionales, científicas y técnicas | 62,04% |
+| N | Actividades de servicios administrativos y de apoyo | 59,10% |
+| O | Administración pública y defensa; planes de seguridad social de afiliación obligatoria | 65,25% |
+| P | Educación | 67,08% |
+| Q | Actividades de atención de la salud humana y de asistencia social | 63,24% |
+| R | Actividades artísticas de entretenimiento y recreación | 56,92% |
+| S | Otras actividades de servicios | 56,33% |
+| T | Actividades de los hogares individuales en calidad de empleadores; actividades no diferenciadas de los hogares individuales como productores de bienes y servicios para uso propio | 56,01% |
+| U | Actividades de organizaciones y entidades extraterritoriales | 64,26% |
+| (sin código) | No clasificados en otra parte | 62,53% |
+| (sin código) | **Rentistas de capital incluidos dividendos y participaciones** | **28,08%** |
+| (sin código) | Presunción media | 62,88% |
+
+**La fórmula, leída en el código de la calculadora oficial:**
+
+```
+costos_presuntos = ingreso_bruto * coeficiente_de_la_actividad
+descuento        = el mayor entre costos reales digitados y costos presuntos
+IBC              = (ingreso_bruto - descuento) * 40%
+piso: 1 SMLMV                               techo: 25 SMLMV
+```
+
+**El descuento es el mayor de los dos, no el que elija el aportante.** Como un descuento mayor produce un IBC menor, la calculadora nunca deja al aportante por debajo de la presunción. La consecuencia operativa, que sí es consejo: **los costos reales solo le sirven a alguien si superan el coeficiente presunto de su actividad.** Para casi todas las actividades ese umbral está entre 56% y 69% del ingreso bruto, que es alto, así que la presunción suele ganar. Para el rentista, cuyo coeficiente es 28,08%, superarlo es realista.
+
+**Tres lecturas de la tabla, para no tener que sacarlas de nuevo:**
+
+1. **Rentistas es el descuento más bajo de toda la tabla, por mucho.** 28,08% contra un rango de 56,01% a 68,85% en el resto. Con el mismo ingreso bruto, el rentista cotiza sobre una base más alta que cualquier otro independiente. Es coherente con el diseño del esquema: la renta de capital tiene menos costos asociados que una actividad productiva.
+2. **El resto de la tabla es un pañuelo.** Entre el mínimo y el máximo de las 22 actividades hay menos de 13 puntos, así que clasificar mal la actividad dentro de ese grupo cambia poco el resultado. Clasificar mal entre rentista y no rentista lo cambia todo. Y quien decide la clasificación es la actividad económica principal reportada en la declaración de renta, no el agente.
+3. **Qué es el renglón de "Presunción media" no quedó verificado.** No es el promedio simple de las 21 secciones CIIU (62,01%) ni su mediana (62,04%), así que no se le atribuye método. El agente no lo usa mientras no se sepa cuándo aplica.
+
+`[VERIFICAR]` **Respuesta operativa:** el agente usa estos coeficientes como los que aplica la UGPP en su calculadora oficial, no como cita de norma. **Falta confirmar:** el texto y el anexo de la resolución que los fija, y la fecha desde la cual rigen (la cadena de vigencia está desarrollada en `rentista-de-capital.md` s.5). **Si cambia:** cambiaría el IBC de todo el segmento independiente, no solo del rentista.
 
 ## 3. Rentistas de capital
 
@@ -58,7 +112,7 @@ Lo esencial, en tres puntos:
 2. **Su base sale de la misma regla de la sección 2:** costos reales del art. 107 del ET o presunción de costos de la UGPP, y luego el 40%.
 3. **El patrimonio no es ingreso.** Tener ahorros no genera base de cotización; lo que la genera es lo que esos ahorros **renten**. Es la pregunta que un usuario con patrimonio hace de forma natural y el agente debe separar las dos cosas de entrada: el ahorro sirve para **pagar** el aporte, el rendimiento es lo que **justifica** la base.
 
-**Corrección del 2026-07-28, importante porque el agente venía diciendo lo contrario:** la regla de que "los dividendos y participaciones no admiten presunción de costos y se toman completos" describía el anexo del Decreto 1601 de 2022, **derogado por el Decreto 379 del 7 de abril de 2026**. Ese anexo excluía los dividendos con un paréntesis literal en su renglón de rentistas. Hoy el agente **no repite esa frase**: dice que los dividendos generan base de cotización y que si les aplica o no la presunción es un punto que debe confirmarse. El tratamiento vigente y su marca `[VERIFICAR]` están en `rentista-de-capital.md` sección 6. *Fuente de la derogatoria: Decreto 379 de 2026 art. 2, texto leído en el Gestor Normativo de Función Pública.* **Confianza: alta.**
+**Corrección del 2026-07-28, confirmada y cerrada el 2026-09-16:** la regla de que "los dividendos y participaciones no admiten presunción de costos y se toman completos" describía el anexo del Decreto 1601 de 2022, **derogado por el Decreto 379 del 7 de abril de 2026**. Ese anexo excluía los dividendos con un paréntesis literal en su renglón de rentistas. El renglón vigente dice lo contrario con esas palabras: "Rentistas de Capital incluidos dividendos y participaciones". Así que el agente afirma, sin matiz de estimación, que **los dividendos generan base de cotización y entran en la presunción de costos del 28,08%**. El tratamiento completo está en `rentista-de-capital.md` sección 6, y los coeficientes de las demás actividades en la sección 2 bis de este documento. *Fuentes: derogatoria en el Decreto 379 de 2026 art. 2, texto leído en el Gestor Normativo de Función Pública; renglón y coeficiente en la calculadora oficial de IBC de la UGPP, capturada el 2026-09-16 y archivada en `verificacion/evidencia/`.* **Confianza: alta.** **Cerrado el 2026-09-16**, antes marca `[VERIFICAR]`.
 
 **Quién no está obligado** (según la UGPP): mujeres mayores de 50 u hombres mayores de 55 que nunca se afiliaron, ingresos por debajo de 1 SMLMV, pensionados, beneficiarios de indemnización sustitutiva, y quienes ya cumplen requisitos de pensión. Son exclusiones de **pensión**, no de salud, y funcionan como opción y no como prohibición: ver `rentista-de-capital.md` sección 3.
 
