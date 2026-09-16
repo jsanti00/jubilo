@@ -970,3 +970,32 @@ No se resolvió ninguna de estas aquí. Las cuatro de la sección 6 siguen vigen
 3. **Ganancias ocasionales en el IBC del rentista** (`rentista-de-capital.md` s.2). Quien vendió un inmueble en el año podría estar obligado a cotizar sobre ese valor. Caso frecuente y de monto alto.
 4. **Convenio Iberoamericano: elige el afiliado o aplica de oficio la entidad la vía más favorable** (`bonos-tiempos-publicos-y-exterior.md` s.9). Es la discrepancia CMISS que mantiene a C28 y C60 fuera de alcance.
 5. **Edades de exclusión de la obligación de cotizar del rentista** (50 y 55 años, según el ABC de la UGPP sin artículo citado). El error posible es en la dirección cara: decirle a alguien que no está obligado cuando sí lo estaba.
+
+---
+
+## 8. Decisión del 2026-09-16: el pensionado sale del universo
+
+> Las secciones 1 a 7 son fotos de julio y **no se reescriben**. Esta sección registra una decisión de alcance posterior y su efecto sobre el tablero.
+
+**Decisión de Santiago:** el usuario ya pensionado queda **totalmente fuera de alcance**. No es un segmento desatendido ni un hueco por llenar: es un caso que el producto no atiende y en el que no se invierte foco.
+
+**Cómo se ejecutó** (`kit-contexto/system-prompt.md`, sección "Quién está fuera de alcance: el ya pensionado"):
+- **Sin paso nuevo de filtro.** No se pregunta si está pensionado. Habría costado un turno a todos los usuarios para atrapar a unos pocos que no son el mercado.
+- **Detección pasiva** durante la conversación normal, por cuatro señales: lo dice él mismo, habla de su pensión en presente, manda un desprendible de mesada o una resolución en vez de una historia laboral, o la historia laboral trae estado de pensionado.
+- **La bienvenida no se cambia.** "Te digo cuándo y con qué monto te vas a pensionar" es verdad y describe a quién sirve el producto: hace el filtro sola. Queda revertida la lectura anterior de que era un defecto.
+- **Respuesta:** un solo mensaje corto y amable que deriva al fondo, a Colpensiones o a un abogado pensional. Sin plantilla, sin flujo, sin diagnóstico parcial.
+
+**Efecto sobre el tablero.** Las 16 celdas PEN (C07, C08, C15, C16, C23, C24, C31, C32, C39, C40, C47, C48, C55, C56, C63, C64) salen del denominador. Sobre las 48 restantes: global **72,2%**, corpus 70,8%, cálculo **58,3%**, comportamiento 87,5%.
+
+**El valor no está en el porcentaje, está en el trabajo borrado.** Cuatro de los diez huecos abiertos de la sección 7.6 desaparecen o se colapsan:
+
+| Hueco de 7.6 | Celdas | Qué pasa |
+|---|---|---|
+| #4, Cálculo: reajuste anual, retención en la fuente, mesada 14, excedentes de libre disponibilidad | 16 | **Desaparece.** Era todo modelado para el pensionado |
+| Comportamiento: no hay flujo ni plantilla para el pensionado (hueco #3 de la sección 4.3) | 16 | **Se colapsa** a una regla de detección y un mensaje. Deja de ser cero |
+| #10, Corpus: pensionado de Colpensiones con excedente | 4 | **Desaparece** |
+| Parte del #1 de cálculo (aporte voluntario) que caía sobre celdas PEN | 8 de 28 | Se reduce el alcance del hueco |
+
+**Lo que NO cambia:** el corpus del pensionado se queda en el kit. Se le responde a quien todavía no se ha pensionado, porque cómo se cobra la pensión es parte de decidir cuándo pensionarse.
+
+**Pendiente asociado:** la decisión 2 de la sección 7.7 ("el texto de la bienvenida") queda **cerrada sin cambio**. La decisión 1 ("el universo de la matriz") queda **cerrada**: el denominador es 48.
