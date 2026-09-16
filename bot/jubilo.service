@@ -1,0 +1,13 @@
+[Unit]
+Description=Bot de Telegram de Jubilo
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/jubilo
+ExecStart=/srv/jubilo/venv/bin/python /srv/jubilo/bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
