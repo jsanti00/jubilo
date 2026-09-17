@@ -18,3 +18,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# La bitacora que se trae del servidor y los reportes que salen de ella.
+# Son conversaciones de personas: se quedan en el Mac, no suben a GitHub.
+analisis/datos/

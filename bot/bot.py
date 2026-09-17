@@ -20,6 +20,9 @@ import urllib.request
 from telegram import Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
+# El cuaderno de bitacora: vive al lado de este archivo, en el mismo servidor.
+import registro
+
 # --- Rutas y constantes -----------------------------------------------------
 
 BASE = pathlib.Path("/srv/jubilo")          # todo vive debajo de aqui
@@ -54,6 +57,11 @@ ARCHIVO_BIENVENIDA = REPO / "kit-contexto" / "bienvenida-y-aviso.txt"
 # que version vio cada persona.
 VERSION_AVISO = "1.1"
 
+# El secreto con el que se disfraza el chat de Telegram de cada persona antes de
+# anotar nada. Se crea solo la primera vez que arranca el bot y no sale de aqui.
+ARCHIVO_SAL = BASE / "config" / "sal.txt"
+SAL = None                                  # se llena al arrancar, en main()
+
 # Solo puede leer archivos y correr la calculadora. Nada de escribir ni de internet.
 HERRAMIENTAS = f"Read,Bash(python3 {REPO}/calculadora/*)"
 
@@ -73,8 +81,31 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 # El archivo de log solo lo puede leer el usuario jubilo.
 os.chmod(BASE / "bot.log", 0o600)
 
-# Un candado: atiende de a un usuario a la vez, para no reventar la cuota.
-CANDADO = asyncio.Lock()
+# Cuantas conversaciones se atienden al mismo tiempo. Antes era una sola y la
+# gente hacia fila: con cinco personas escribiendo a la vez, la ultima esperaba
+# cinco veces lo que tarda una respuesta. El servidor aguanta de sobra dos
+# (cada proceso usa medio giga y hay tres y medio libres); el freno de verdad
+# es la cuota de la cuenta de Claude, que es una sola y compartida.
+# Si algun dia algo se pone raro, bajar este numero a 1 devuelve el bot al
+# comportamiento anterior sin tocar nada mas.
+SIMULTANEOS = 2
+CUPOS = asyncio.Semaphore(SIMULTANEOS)
+
+# Ademas, cada persona tiene su propio candado. Esto no es por cuota: es porque
+# dos respuestas suyas a la vez retomarian la misma conversacion de Claude en
+# paralelo y se pisarian entre si. Sus mensajes se atienden en orden, siempre.
+CANDADOS_PERSONA = {}
+
+
+def candado_de(chat_id):
+    """Devuelve el candado de esta persona, y lo crea la primera vez.
+
+    El diccionario va creciendo con cada persona nueva. Son unos pocos bytes
+    cada uno, asi que a esta escala no vale la pena limpiarlo.
+    """
+    if chat_id not in CANDADOS_PERSONA:
+        CANDADOS_PERSONA[chat_id] = asyncio.Lock()
+    return CANDADOS_PERSONA[chat_id]
 
 
 # --- Guardar que sesion de Claude corresponde a cada chat -------------------
@@ -113,6 +144,13 @@ def inicializar_db():
 
     con.commit()
     con.close()
+
+    # Las dos tablas de la bitacora (turnos y eventos) las crea su propio modulo.
+    registro.inicializar(DB)
+
+    # La base ahora guarda conversaciones, asi que solo la puede leer el usuario
+    # del bot. Es la misma proteccion que ya tenia el archivo de log.
+    os.chmod(DB, 0o600)
 
 
 def leer_sesion(chat_id):
@@ -194,6 +232,30 @@ def detectar_solicitud(texto):
     if "politica de datos" in limpio:
         return "politica de datos"
     return None
+
+
+# --- La bitacora: como quedan anotados los turnos y los hitos ---------------
+
+def quien(chat_id):
+    """Convierte el chat de Telegram en el seudonimo con el que se anota todo.
+
+    En la bitacora nunca queda el chat de verdad: ni en los turnos, ni en los
+    eventos. La tabla `autorizaciones` es la unica que guarda el chat real,
+    porque la ley obliga a poder decir quien autorizo que.
+    """
+    return registro.seudonimo(chat_id, SAL)
+
+
+def anotar(chat_id, evento, detalle=None):
+    """Deja constancia de un hito. Si falla, se aguanta callado.
+
+    Va entero dentro de un try a proposito: la bitacora es para nosotros, no
+    para el usuario. Que se caiga una anotacion nunca puede tumbar una respuesta.
+    """
+    try:
+        registro.anotar_evento(DB, quien(chat_id), ahora(), evento, detalle)
+    except Exception as e:
+        log.error("no se pudo anotar el evento '%s': %s", evento, e)
 
 
 # --- Preparar el espacio privado de cada usuario ----------------------------
@@ -324,7 +386,12 @@ def avisar_sesion_vencida(es_prueba=False):
 # --- Llamar a Claude --------------------------------------------------------
 
 def preguntarle_a_claude(chat_id, texto):
-    """Corre `claude -p` una vez y devuelve (respuesta, id_de_sesion)."""
+    """Corre `claude -p` una vez.
+
+    Devuelve tres cosas: la respuesta, el id de sesion y un diccionario con los
+    numeros de esa llamada (cuanto tardo, cuanto costo, cuantos tokens). Esos
+    numeros los regala el propio Claude en su respuesta y antes se botaban.
+    """
     carpeta = carpeta_del_usuario(chat_id)
 
     # La variable clave del aislamiento: cada usuario, su propio directorio de estado.
@@ -354,7 +421,7 @@ def preguntarle_a_claude(chat_id, texto):
 
     if salida.returncode != 0:
         log.error("claude fallo para %s: %s", chat_id, salida.stderr[:500])
-        return None, None
+        return None, None, {"resultado": "error"}
 
     datos = json.loads(salida.stdout)
 
@@ -368,10 +435,26 @@ def preguntarle_a_claude(chat_id, texto):
         # mandamos un mensaje al dueno para que entre a hacer /login.
         if "not logged in" in str(datos.get("result")).lower():
             avisar_sesion_vencida()
+            return None, None, {"resultado": "sesion_vencida"}
 
-        return None, None
+        return None, None, {"resultado": "error"}
 
-    return datos.get("result"), datos.get("session_id")
+    # Los numeros de esta llamada. Vienen dentro del JSON que acaba de devolver
+    # Claude: cuanto tardo en total, cuanto costo en dolares, cuantas vueltas
+    # dio por dentro y cuantos tokens gasto.
+    uso = datos.get("usage") or {}
+    metricas = {
+        "resultado": "ok",
+        "latencia_ms": datos.get("duration_ms"),
+        "costo_usd": datos.get("total_cost_usd"),
+        "turnos_internos": datos.get("num_turns"),
+        "tokens_entrada": (uso.get("input_tokens") or 0)
+                          + (uso.get("cache_read_input_tokens") or 0)
+                          + (uso.get("cache_creation_input_tokens") or 0),
+        "tokens_salida": uso.get("output_tokens"),
+    }
+
+    return datos.get("result"), datos.get("session_id"), metricas
 
 
 # --- Lo que pasa cuando llega un mensaje ------------------------------------
@@ -387,6 +470,7 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # antes que se va a hacer con ella, que es lo que exige la ley.
     if not vio_el_aviso(chat_id):
         registrar_aviso(chat_id)
+        anotar(chat_id, "aviso_mostrado", VERSION_AVISO)
         await mensaje.reply_text(ARCHIVO_BIENVENIDA.read_text(encoding="utf-8"))
 
         # Si de una mando su historia laboral sin haber visto el aviso, no se
@@ -398,6 +482,24 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
         return
 
+    # --- Lo que todavia no se sabe atender -----------------------------------
+    # Notas de voz, audios y videos. Antes se ignoraban en silencio y la persona
+    # se quedaba esperando una respuesta que nunca llegaba. Ahora se le dice.
+    medio = None
+    if mensaje.voice:
+        medio = "nota de voz"
+    elif mensaje.audio:
+        medio = "audio"
+    elif mensaje.video or mensaje.video_note:
+        medio = "video"
+
+    if medio:
+        anotar(chat_id, "medio_no_soportado", medio)
+        await mensaje.reply_text(
+            f"Por ahora no puedo escuchar {medio}s. Escribeme el mensaje y seguimos."
+        )
+        return
+
     # --- Peticiones sobre sus propios datos ----------------------------------
     # Se registran antes de responder, porque los plazos legales corren desde
     # que la persona lo pide, no desde que se le contesta. Despues el mensaje
@@ -405,12 +507,15 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
     tipo = detectar_solicitud(mensaje.text or mensaje.caption or "")
     if tipo:
         registrar_solicitud(chat_id, tipo)
+        anotar(chat_id, "solicitud_datos", tipo)
 
     # --- El archivo que manda la persona -------------------------------------
-    if mensaje.document or mensaje.photo:
+    tuvo_adjunto = bool(mensaje.document or mensaje.photo)
+    if tuvo_adjunto:
         # Llego su historia laboral y ya habia visto el aviso: este envio es
         # la autorizacion, y queda con fecha y hora.
         registrar_documento(chat_id)
+        anotar(chat_id, "documento_recibido")
 
         carpeta = carpeta_del_usuario(chat_id)
         archivo_tg = mensaje.document or mensaje.photo[-1]
@@ -426,16 +531,44 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     # Acuse inmediato: la regla de producto prohibe el silencio mientras se procesa.
-    await mensaje.reply_text("Recibido. Dame un momento.")
+    # Si en este momento no hay cupo libre, se le dice, en vez de dejarlo
+    # pensando que el bot se colgo. La gente aguanta la espera si sabe que la hay.
+    if CUPOS.locked():
+        await mensaje.reply_text(
+            "Recibido. Estoy atendiendo a alguien más en este momento, "
+            "así que me voy a demorar un poco más de lo normal. No te vayas."
+        )
+    else:
+        await mensaje.reply_text("Recibido. Dame un momento.")
     await context.bot.send_chat_action(chat_id, "typing")
 
-    # De a uno a la vez, para no reventar la cuota de la cuenta.
-    async with CANDADO:
-        try:
-            respuesta, sesion = await asyncio.to_thread(preguntarle_a_claude, chat_id, texto)
-        except subprocess.TimeoutExpired:
-            await mensaje.reply_text("Esto se está demorando más de lo normal. Escríbeme otra vez en unos minutos.")
-            return
+    # Desde aqui se cronometra. Interesan dos tiempos distintos: lo que la
+    # persona espera haciendo fila y lo que se demora Claude una vez le toca.
+    # Si el primero empieza a crecer, es que hay que subir los cupos.
+    llego = time.monotonic()
+    metricas = {}
+
+    # Dos filas, en este orden: primero la suya (que sus propios mensajes no se
+    # atropellen) y despues la de todos (que no haya mas de SIMULTANEOS a la vez).
+    async with candado_de(chat_id):
+        async with CUPOS:
+            espera_cola_ms = int((time.monotonic() - llego) * 1000)
+
+            # Mientras espero, Telegram deja de mostrar "escribiendo...". Se
+            # vuelve a poner justo antes de arrancar, ya con el cupo en la mano.
+            await context.bot.send_chat_action(chat_id, "typing")
+
+            try:
+                respuesta, sesion, metricas = await asyncio.to_thread(preguntarle_a_claude, chat_id, texto)
+            except subprocess.TimeoutExpired:
+                anotar_turno_del_mensaje(chat_id, texto, None, tuvo_adjunto, espera_cola_ms,
+                                         {"resultado": "timeout"})
+                await mensaje.reply_text("Esto se está demorando más de lo normal. Escríbeme otra vez en unos minutos.")
+                return
+
+    # Pase lo que pase, el turno queda anotado: tambien los que fallaron. Un
+    # reporte que solo muestra lo que salio bien no sirve para arreglar nada.
+    anotar_turno_del_mensaje(chat_id, texto, respuesta, tuvo_adjunto, espera_cola_ms, metricas)
 
     if respuesta is None:
         await mensaje.reply_text(
@@ -452,16 +585,60 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await mensaje.reply_text(respuesta[i:i + 4000])
 
 
+def anotar_turno_del_mensaje(chat_id, texto, respuesta, tuvo_adjunto, espera_cola_ms, metricas):
+    """Deja el turno escrito en la bitacora, con sus numeros.
+
+    Como `anotar`, va entero dentro de un try: si la anotacion falla, la persona
+    igual recibe su respuesta y el problema queda en el log.
+    """
+    try:
+        registro.anotar_turno(
+            DB,
+            seudonimo=quien(chat_id),
+            ts=ahora(),
+            texto_usuario=texto,
+            respuesta=respuesta,
+            tuvo_adjunto=1 if tuvo_adjunto else 0,
+            resultado=metricas.get("resultado", "error"),
+            espera_cola_ms=espera_cola_ms,
+            latencia_ms=metricas.get("latencia_ms"),
+            costo_usd=metricas.get("costo_usd"),
+            tokens_entrada=metricas.get("tokens_entrada"),
+            tokens_salida=metricas.get("tokens_salida"),
+            turnos_internos=metricas.get("turnos_internos"),
+        )
+
+        # Si la respuesta ya trae una cifra en pesos y habla de pension, es muy
+        # probable que sea el diagnostico. Sirve para medir cuanta gente llega
+        # hasta el final, sin tener que leer todas las conversaciones a mano.
+        if registro.parece_diagnostico(respuesta):
+            anotar(chat_id, "diagnostico_probable")
+    except Exception as e:
+        log.error("no se pudo anotar el turno de %s: %s", chat_id, e)
+
+
 def main():
+    global SAL
+
     USUARIOS.mkdir(parents=True, exist_ok=True)
     inicializar_db()
+
+    # El secreto del seudonimo. La primera vez se inventa solo y queda guardado;
+    # de ahi en adelante siempre es el mismo, para que una misma persona conserve
+    # su etiqueta entre reinicios.
+    SAL = registro.obtener_sal(ARCHIVO_SAL)
 
     # La llave del bot sale del archivo de configuracion, con la misma funcion
     # que usa el aviso al dueno.
     token = leer_token()
 
     app = Application.builder().token(token).build()
-    app.add_handler(MessageHandler(filters.TEXT | filters.Document.ALL | filters.PHOTO, al_recibir_mensaje))
+    # Que tipos de mensaje atiende. Los audios y videos se aceptan aqui no porque
+    # se sepan procesar, sino para poder contestarle a la persona que no se puede:
+    # antes caian en un hueco y se quedaba esperando en silencio.
+    medios = (filters.TEXT | filters.Document.ALL | filters.PHOTO
+              | filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE)
+    app.add_handler(MessageHandler(medios, al_recibir_mensaje))
     log.info("Júbilo arrancó")
     app.run_polling()
 
