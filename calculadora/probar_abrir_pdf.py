@@ -73,6 +73,30 @@ with tempfile.TemporaryDirectory() as carpeta:
     revisar(r["estado"] == "abierto", "y con espacios también")
 
     # -----------------------------------------------------------------------
+    # Otros fondos, otras claves. No siempre es la cédula.
+    # -----------------------------------------------------------------------
+
+    print("\nClaves que no son la cédula (otros fondos)")
+
+    # Algunos fondos usan la fecha de nacimiento.
+    por_fecha = pdf_de_mentira(carpeta / "porvenir.pdf", clave="15081968")
+    r = abrir_pdf.abrir(por_fecha, "15081968")
+    revisar(r["estado"] == "abierto", "una fecha de nacimiento como clave también abre")
+
+    # Y otros mandan una clave alfanumérica aparte, en el correo.
+    alfanumerica = pdf_de_mentira(carpeta / "proteccion.pdf", clave="HL2026XZ")
+    r = abrir_pdf.abrir(alfanumerica, "HL2026XZ")
+    revisar(r["estado"] == "abierto", "una clave con letras abre igual")
+
+    # La persona la escribe en minúsculas, como suele pasar al copiarla a mano.
+    r = abrir_pdf.abrir(alfanumerica, "hl2026xz")
+    revisar(r["estado"] == "abierto", "y si la escribe en minúsculas, también")
+
+    # Con espacios de más al copiar y pegar del correo.
+    r = abrir_pdf.abrir(alfanumerica, "  HL2026XZ  ")
+    revisar(r["estado"] == "abierto", "y con espacios pegados al copiar del correo")
+
+    # -----------------------------------------------------------------------
     # Los casos en que no se puede abrir
     # -----------------------------------------------------------------------
 

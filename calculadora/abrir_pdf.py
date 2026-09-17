@@ -3,10 +3,12 @@
 # Uso:
 #   python3 abrir_pdf.py /ruta/historiaLaboral.pdf 1234567890
 #
-# Colpensiones manda la historia laboral cifrada con la cedula del afiliado.
-# Un PDF asi no se puede leer: hay que abrirlo primero con la clave. Este
-# programa hace eso y nada mas. Deja al lado una copia sin clave, con el mismo
-# nombre y "-abierto" al final, que ya se puede leer normalmente.
+# Los fondos mandan la historia laboral cifrada. Colpensiones lo hace casi
+# siempre, con la cedula del afiliado, pero cualquier fondo puede hacerlo y la
+# clave no siempre es la cedula: a veces es la fecha de nacimiento y a veces una
+# clave que mandan aparte. Un PDF asi no se puede leer: hay que abrirlo primero.
+# Este programa hace eso y nada mas. Deja al lado una copia sin clave, con el
+# mismo nombre y "-abierto" al final, que ya se puede leer normalmente.
 #
 # Esta en `calculadora/` y no en otra carpeta por una razon practica: el bot
 # solo tiene permiso de correr programas de esta carpeta, y ese permiso es una
@@ -25,13 +27,21 @@ def variantes_de_clave(clave):
     """Las formas en que la misma clave se puede haber escrito.
 
     La gente escribe su cedula de muchas maneras: con puntos, con espacios, con
-    guiones. La clave del PDF es una sola, asi que se prueban las variantes
-    razonables en vez de devolver "clave incorrecta" por un punto de mas.
+    guiones. Y si la clave del fondo es alfanumerica, la puede escribir en
+    mayusculas o en minusculas. La clave del PDF es una sola, asi que se prueban
+    las variantes razonables en vez de devolver "clave incorrecta" por un punto
+    de mas o por una letra en mayuscula.
     """
-    limpia = "".join(c for c in clave if c.isdigit())
+    base = clave.strip()
+    solo_numeros = "".join(c for c in base if c.isdigit())
+    sin_espacios = "".join(base.split())
+
     # Se usa un diccionario y no un conjunto para no perder el orden: primero
-    # lo que la persona escribio, despues lo limpio.
-    return list(dict.fromkeys([clave.strip(), limpia]))
+    # lo que la persona escribio, despues las variantes, de la mas probable a
+    # la menos. Las vacias se descartan.
+    candidatas = [base, solo_numeros, sin_espacios,
+                  base.upper(), base.lower(), sin_espacios.upper()]
+    return [c for c in dict.fromkeys(candidatas) if c]
 
 
 def abrir(ruta, clave):
