@@ -83,8 +83,10 @@ Solo después de que las pruebas del nivel que corresponda estén en verde.
 
 ```bash
 git add -A && git commit -m "..." && git push
-ssh jubilo@128.140.125.112 'cd /srv/jubilo/jubilo && git pull && export XDG_RUNTIME_DIR=/run/user/$(id -u) && systemctl --user restart jubilo'
+ssh jubilo@128.140.125.112 'cd /srv/jubilo/jubilo && chmod -R u+w . && git pull && chmod -R a-w . && chmod -R u+w .git && export XDG_RUNTIME_DIR=/run/user/$(id -u) && systemctl --user restart jubilo'
 ```
+
+**Por qué esos `chmod`.** El repositorio del servidor queda en **solo lectura** entre despliegues, y no es cosmético: Júbilo necesita permiso de escritura para guardar la extracción, y ese permiso el CLI solo lo concede suelto (`Write`), no acotado a una carpeta (se probó, `Write(/ruta/**)` no funciona). El candado de que no pueda tocar la calculadora ni el kit es entonces el sistema de archivos. El `git pull` necesita escribir, así que se abre justo para eso y se vuelve a cerrar. `.git` se deja escribible porque git lo necesita para operar.
 
 **Cambios del `bot.py` o de `registro.py`** (van por el script, que valida, corre la prueba de la bitácora, respalda, sube los dos archivos y reinicia):
 

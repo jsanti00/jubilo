@@ -62,8 +62,27 @@ VERSION_AVISO = "1.1"
 ARCHIVO_SAL = BASE / "config" / "sal.txt"
 SAL = None                                  # se llena al arrancar, en main()
 
-# Solo puede leer archivos y correr la calculadora. Nada de escribir ni de internet.
-HERRAMIENTAS = f"Read,Bash(python3 {REPO}/calculadora/*)"
+def herramientas_de(carpeta):
+    """Lo unico que Júbilo puede hacer mientras atiende a una persona.
+
+    Son tres cosas y ninguna mas: leer archivos, escribir, y correr los
+    programas de la calculadora. Nada de internet, en ningun caso.
+
+    El permiso de escribir hace falta porque el flujo del documento guarda la
+    extraccion en un JSON. Sin el, ese paso es imposible y Júbilo se queda
+    dando vueltas hasta que dice que tuvo un problema tecnico. Fue justo lo
+    que paso el 2026-09-16 con los primeros usuarios de prueba.
+
+    **Por que el permiso va suelto y no atado a una carpeta:** se probo contra
+    el servidor y la forma acotada `Write(/ruta/**)` no la concede el CLI, ni
+    con una barra ni con dos. Solo la concede `Write` a secas. El encierro se
+    consigue entonces por otros dos lados, que son igual de efectivos:
+      1. `--add-dir` limita lo que existe para el: su carpeta y el repositorio.
+      2. El repositorio esta en solo lectura a nivel de archivos, asi que la
+         calculadora y el kit no se pueden modificar desde una conversacion,
+         aunque a Júbilo lo convenzan de intentarlo. Ver AGENTS.md seccion 4.
+    """
+    return f"Read,Write,Bash(python3 {REPO}/calculadora/*)"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -403,7 +422,7 @@ def preguntarle_a_claude(chat_id, texto):
         "--output-format", "json",
         "--add-dir", str(carpeta),   # puede ver su propia carpeta
         "--add-dir", str(REPO),      # y el kit y la calculadora
-        "--allowedTools", HERRAMIENTAS,
+        "--allowedTools", herramientas_de(carpeta),
         # Sin esto, Claude arranca en modo automatico y decide solo que permite.
         # Con esto, manda la lista de arriba y nada mas.
         "--permission-mode", "default",
