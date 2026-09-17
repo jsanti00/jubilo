@@ -10,9 +10,25 @@ Ese .md es lo que se abre en una sesion nueva con Claude para iterar el bot: se
 lee una sola vez, ya digerido, en vez de andar hurgando en la base.
 """
 
+import datetime
 import sqlite3
 import sys
 from pathlib import Path
+
+# El servidor corre en UTC, asi que las horas vienen cinco adelante de Bogota.
+# Se convierten al leerlas, para que el reporte se lea en hora colombiana y no
+# haya que restar cinco a mano cada vez.
+BOGOTA = datetime.timezone(datetime.timedelta(hours=-5))
+
+
+def hora_local(ts):
+    """Pasa la hora guardada a hora de Bogota, en formato corto y legible."""
+    if not ts:
+        return "sin hora"
+    try:
+        return datetime.datetime.fromisoformat(ts).astimezone(BOGOTA).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return ts[:16]        # si viene en un formato raro, se muestra tal cual
 
 
 def percentil(valores, p):
@@ -61,7 +77,7 @@ def main():
 
     e(f"# Reporte de Júbilo")
     e("")
-    e(f"Base leída: `{db.name}`")
+    e(f"Base leída: `{db.name}`. Todas las horas están en hora de Bogotá.")
     e("")
 
     # --- El embudo ----------------------------------------------------------
@@ -165,7 +181,7 @@ def main():
         for t in sus_turnos:
             marca = "" if t["resultado"] == "ok" else f" [{t['resultado']}]"
             adjunto = " (con archivo)" if t["tuvo_adjunto"] else ""
-            e(f"**La persona{adjunto}, {t['ts'][:16]}{marca}:**")
+            e(f"**La persona{adjunto}, {hora_local(t['ts'])}{marca}:**")
             e("")
             e("```")
             e((t["texto_usuario"] or "").strip() or "(sin texto)")
