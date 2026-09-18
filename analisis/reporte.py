@@ -130,6 +130,46 @@ def main():
       "dispara, ahí está el cuello de botella.")
     e("")
 
+    # --- De dónde sale el gasto de entrada ----------------------------------
+    # El total de tokens de entrada no dice nada por sí solo: un token leído de
+    # caché cuesta una décima parte de uno fresco. Separarlos es lo que dice si
+    # el gasto está en el kit que se relee o en la conversación, y evita
+    # optimizar apuntando al lugar equivocado.
+
+    def suma(columna):
+        """Suma una columna de los turnos que salieron bien, tolerando vacíos.
+
+        Las bases anteriores al 2026-09-18 no tienen las columnas del desglose,
+        así que si no existen se devuelve None y la sección no se imprime.
+        """
+        if columna not in turnos[0].keys():
+            return None
+        return sum(t[columna] or 0 for t in ok)
+
+    frescos = suma("tokens_frescos")
+    de_cache = suma("tokens_cache")
+    cache_creado = suma("tokens_cache_creado")
+
+    if frescos is not None and (frescos + de_cache + cache_creado) > 0:
+        total_entrada = frescos + de_cache + cache_creado
+        e("## De dónde sale el gasto de entrada")
+        e("")
+        e("| Tipo de token de entrada | Total | Del total |")
+        e("|---|---|---|")
+        e(f"| Frescos (se pagan completos cada vez) | {frescos:,} | {frescos / total_entrada:.0%} |")
+        e(f"| Leídos de caché (cuestan una décima parte) | {de_cache:,} | {de_cache / total_entrada:.0%} |")
+        e(f"| Guardados en caché (cuestan un poco más que uno fresco) | {cache_creado:,} | {cache_creado / total_entrada:.0%} |")
+        e("")
+        if ok:
+            e(f"- Tokens frescos por turno: **{frescos / len(ok):,.0f}**")
+            e(f"- Tokens de salida por turno: {(suma('tokens_salida') or 0) / len(ok):,.0f}")
+        e("")
+        e("Cómo leerlo: si casi todo es caché, el kit no es el problema y el "
+          "ahorro está en no llamar al modelo cuando no hace falta. Si los "
+          "frescos son altos, el kit se está releyendo entero en cada turno y "
+          "ahí sí vale cargarlo por etapas.")
+        e("")
+
     # --- Lo que salió mal ---------------------------------------------------
 
     problemas = {}
@@ -140,6 +180,12 @@ def main():
         if ev["evento"] == "medio_no_soportado":
             clave = f"mandó {ev['detalle']}"
             problemas[clave] = problemas.get(clave, 0) + 1
+        # Cada fuga es un mensaje del CLI que el filtro alcanzo a interceptar
+        # antes de que le llegara a la persona. Que no se vea no quiere decir
+        # que no pase: es una grieta que hay que ir a tapar en su origen.
+        if ev["evento"] == "fuga_cli":
+            problemas["se interceptó un mensaje del CLI"] = \
+                problemas.get("se interceptó un mensaje del CLI", 0) + 1
 
     e("## Lo que salió mal")
     e("")

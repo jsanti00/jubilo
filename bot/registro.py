@@ -42,7 +42,10 @@ def inicializar(db):
             espera_cola_ms  INTEGER,         -- cuanto espero su turno por el candado
             latencia_ms     INTEGER,         -- cuanto tardo Claude en responder
             costo_usd       REAL,            -- lo que costo ese mensaje
-            tokens_entrada  INTEGER,
+            tokens_entrada  INTEGER,         -- el total de entrada: frescos + cache
+            tokens_frescos  INTEGER,         -- los que se pagan completos cada vez
+            tokens_cache    INTEGER,         -- los que se leyeron de cache (mucho mas baratos)
+            tokens_cache_creado INTEGER,     -- los que se guardaron en cache en este turno
             tokens_salida   INTEGER,
             turnos_internos INTEGER          -- cuantas vueltas dio Claude por dentro
         )
@@ -57,6 +60,14 @@ def inicializar(db):
             detalle   TEXT
         )
     """)
+
+    # Las bases que ya existian no tienen las columnas nuevas, y el CREATE TABLE
+    # de arriba no las anade porque la tabla ya esta creada. Asi que se anaden
+    # una por una, y la que ya exista simplemente se salta.
+    columnas_hoy = {fila[1] for fila in con.execute("PRAGMA table_info(turnos)")}
+    for nueva in ("tokens_frescos", "tokens_cache", "tokens_cache_creado"):
+        if nueva not in columnas_hoy:
+            con.execute(f"ALTER TABLE turnos ADD COLUMN {nueva} INTEGER")
 
     # Indices para que el reporte no tenga que recorrer toda la tabla.
     con.execute("CREATE INDEX IF NOT EXISTS idx_turnos_persona ON turnos (seudonimo, ts)")

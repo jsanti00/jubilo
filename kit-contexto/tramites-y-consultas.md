@@ -1,10 +1,12 @@
 # Trámites y consultas por administradora - Documento 11 del kit
 
-> **Última actualización:** 2026-07-21. **Por qué existe:** el kit tenía las reglas del sistema pero no el "cómo se hace". Cuando el usuario pregunta "¿y cómo sé en qué perfil estoy?" o "¿dónde descargo mi historia laboral?", el agente necesita el paso a paso real, no una recomendación vaga de "consulta con tu fondo".
+> **Última actualización:** 2026-09-18 (antes 2026-07-21). **Por qué existe:** el kit tenía las reglas del sistema pero no el "cómo se hace". Cuando el usuario pregunta "¿y cómo sé en qué perfil estoy?" o "¿dónde descargo mi historia laboral?", el agente necesita el paso a paso real, no una recomendación vaga de "consulta con tu fondo".
 > **Regla de mantenimiento:** las apps y portales cambian. Cada dato aquí lleva la fecha en que se verificó. Si el paso a paso ya no coincide, el agente lo dice y orienta por canal de atención en lugar de insistir con una ruta muerta.
 > **Regla de honestidad:** lo que no esté documentado aquí, el agente NO lo inventa. Dice que no tiene el paso a paso exacto y orienta al canal de atención de la administradora.
 > **Fuentes oficiales:** las guías o documentos oficiales de cada administradora que respaldan estas rutas se guardan en `fuentes-tramites/`.
-> **Ingesta (decidido 2026-07-21):** el usuario descarga su historia laboral siguiendo estas rutas y luego la trae al chat como **PDF o imagen (screenshot)**; el agente acepta ambos por igual. Se evaluó y **descartó** que Júbilo hiciera el trámite por el usuario (automatización): Colpensiones bloquea el acceso automatizado por firewall y Porvenir usa reCAPTCHA Enterprise. Por eso, en todos los fondos, el agente **guía con el paso a paso**; no hace la solicitud por el usuario.
+> **Ingesta (decidido 2026-07-21, revisado el 2026-09-18):** el usuario descarga su historia laboral siguiendo estas rutas y la trae al chat como **PDF o imagen (screenshot)**; el agente acepta ambos por igual.
+> **Lo que cambió el 2026-09-18:** en **Colpensiones**, y solo ahí, el agente **sí puede hacer la solicitud por el usuario**. Se volvió a probar el formulario público y hoy responde con normalidad (HTTP 200, sin captcha) y el trámite se completa. Lo hace con `tramites/pedir_historia.py`, solo si la persona lo acepta, y le dice a qué correo va a llegar. Las reglas exactas están en el `system-prompt.md`, sección "Pedirle la historia laboral a Colpensiones por ella". Ojo con el límite: Colpensiones manda el reporte **al correo registrado**, nunca al chat, así que la persona todavía tiene que abrir su correo y reenviarlo.
+> **En los fondos privados no cambió nada:** Porvenir usa reCAPTCHA Enterprise y los demás exigen usuario y contraseña, que no se piden jamás. Ahí el agente **guía con el paso a paso** y no hace la solicitud por nadie.
 
 ## Estado de documentación
 
@@ -27,9 +29,31 @@
 - **El agente no pregunta "app o web" ni "celular o computador".** No hace falta: la ruta redactada así funciona en ambos.
 - **Nota técnica:** el Bot API de Telegram no le informa al bot desde qué cliente escribe el usuario (móvil/escritorio/web); Júbilo no puede detectarlo. Por eso el default es móvil y la ruta se escribe para servir a ambos sin preguntar.
 
-**Manejo del PDF con clave (regla transversal, Santiago 2026-07-21).** Algunos fondos entregan la historia laboral como PDF protegido con contraseña; cuando la hay, esa clave es **el número de documento del afiliado sin puntos ni comas** (confirmado en Protección). **No hace falta documentar fondo por fondo si el archivo trae clave o no:** si el PDF que manda el usuario está cifrado, Júbilo aplica siempre lo mismo (opción a, decidida) — pide el número de cédula y descifra antes de extraer. Que un fondo entregue el PDF con o sin clave **no cambia el flujo de Júbilo**.
+**Manejo del PDF con clave (regla transversal, Santiago 2026-07-21).** Algunos fondos entregan la historia laboral como PDF protegido con contraseña; cuando la hay, esa clave es **el número de documento del afiliado sin puntos ni comas** (confirmado en Protección). **No hace falta documentar fondo por fondo si el archivo trae clave o no:** si el PDF que manda el usuario está cifrado, Júbilo aplica siempre lo mismo (opción a, decidida): pide el número de cédula y descifra antes de extraer. Que un fondo entregue el PDF con o sin clave **no cambia el flujo de Júbilo**.
 
 ---
+
+## ¿El reporte de un fondo trae los periodos de los fondos anteriores?
+
+**RESUELTO el 2026-09-18, con documentos reales. La respuesta es sí, y con detalle completo.**
+
+Es la pregunta que decide si a alguien con historia partida hay que pedirle uno o dos documentos. Se resolvió revisando siete historias laborales reales, no buscando en internet, que fue lo que no funcionó.
+
+**El hallazgo:** el reporte de la administradora donde la persona está **hoy** reconstruye los periodos de la administradora **anterior** con el mismo nivel de detalle que los propios: periodo, fecha de pago, **IBC (salario base)**, cotización y días cotizados. No es un total suelto de semanas.
+
+| Emisor del reporte | Cómo se ve el tramo del otro fondo | Evidencia |
+|---|---|---|
+| **Colpensiones** | Las filas mensuales del tramo que estuvo en un fondo privado aparecen con **IBC completo**, y llevan una observación textual que las marca: "Valor devuelto del Régimen de Ahorro Individual por pago al fondo" o "Art. 76: Oportunidad de Traslado" | Dos reportes reales. En uno, 223 filas marcadas con el artículo 76; en otro, 431 filas con "Pago recibido del Régimen de Ahorro Individual por traslado", todas con su IBC |
+| **Fondos privados** (Colfondos, Skandia) | Traen una **columna de administradora por periodo**, así que se ve fila por fila en qué fondo quedó cada aporte. El IBC también viene completo para los periodos del fondo anterior | Un reporte de Colfondos que se titula "Historia laboral en Colfondos y otros fondos de pensiones", con periodos de Porvenir y su IBC |
+
+**Lo que esto cambia en el producto, y es lo importante:**
+
+- **Con un solo documento alcanza**, incluso con historia partida. No hay que pedir dos. Cada documento que se pide cuesta gente, y este se puede ahorrar.
+- **El diagnóstico del RPM se puede hacer completo**, porque el IBL necesita los salarios y los salarios están.
+- **Lo que sí hay que hacer es mirar las observaciones.** Son la señal de que hubo traslado, y de ahí sale la advertencia sobre la ventana de los diez años. Si el reporte trae filas marcadas con el artículo 76 o con "Régimen de Ahorro Individual", esa persona tiene historia partida aunque no lo haya dicho.
+- **El límite:** esto está confirmado para reportes emitidos por Colpensiones y por dos fondos privados. No se probó con Protección ni con Porvenir como emisores de un caso partido. Si aparece uno, se verifica antes de darlo por igual.
+
+**Ojo con una tentación:** que el documento traiga los dos tramos no quiere decir que la persona no deba revisar el otro lado. Si sospecha que le faltan semanas, el reporte de la otra administradora sirve de contraste. Lo que ya no hace falta es pedirlo **por defecto**.
 
 ## Protección
 
@@ -62,7 +86,7 @@
 - **Clave del PDF (crítico):** el archivo viene **protegido con contraseña**, y la contraseña es **el número de documento sin puntos ni comas** (ej.: cédula 1.234.567.890 -> clave `1234567890`). El mensaje de entrega lo dice: "La clave para abrir tu certificado es tu número de documentos sin puntos ni comas."
 - **Si no llega:** el portal sugiere "actualizar tus datos"; alternativa, el chat de la web.
 
-**Implicación para Júbilo (importante):** cuando el usuario mande este PDF, viene **cifrado**. Para leerlo/extraerlo hay que abrirlo con la clave (su número de cédula sin puntos). Por eso, al dar esta ruta, Júbilo debe **avisar de la clave por adelantado** y, cuando reciba el archivo, estar listo para usar ese número. **Decisión tomada (Santiago 2026-07-21): opción (a)** — Júbilo le pide al usuario su número de cédula y descifra el PDF con esa clave antes de extraer (es el dato de menos fricción: el usuario lo da de todos modos).
+**Implicación para Júbilo (importante):** cuando el usuario mande este PDF, viene **cifrado**. Para leerlo/extraerlo hay que abrirlo con la clave (su número de cédula sin puntos). Por eso, al dar esta ruta, Júbilo debe **avisar de la clave por adelantado** y, cuando reciba el archivo, estar listo para usar ese número. **Decisión tomada (Santiago 2026-07-21): opción (a).** Júbilo le pide al usuario su número de cédula y descifra el PDF con esa clave antes de extraer (es el dato de menos fricción: el usuario lo da de todos modos).
 
 ### Dónde ver el saldo
 - Ruta exacta:
@@ -169,8 +193,14 @@
 ### Dónde ver el saldo
 - Visible tras login en **"Pensión Obligatoria y Cesantías"** (saldo total por contrato) y en la propia pantalla de Historia Laboral.
 
+- **¿La clave de la app sirve en la web?** (vacío detectado en una conversación real, 2026-09-16: a Júbilo se lo preguntaron y tuvo que decir "eso no lo tengo confirmado"). **Sigue sin confirmar, y se investigó a fondo el 2026-09-18.** Lo que hay: una fuente secundaria afirma que en Skandia Colombia el usuario y la contraseña de la app son los mismos del portal web, y es consistente con lo que Skandia documenta oficialmente para México (Skandia Net). **No existe la afirmación literal en ninguna página oficial colombiana con URL citable.** Confianza MEDIA.
+  **Qué hace el agente mientras siga así:** lo dice tal cual ("lo más probable es que sea la misma clave, pero no lo tengo confirmado por Skandia") y le da el camino corto para resolverlo en el momento: la línea nacional **01 8000 517 526**. No lo afirma como dato cerrado. Para cerrarlo hace falta una llamada a esa línea o probarlo con un usuario real.
+
 ### Canales de atención (respaldo cuando la ruta no funciona)
 - Correo de clientes: **cliente@skandia.com.co**.
+- **Línea nacional: 01 8000 517 526.**
+- Chat de servicio: `skandia.co/chat-de-servicio`.
+- Oficinas: Av. 19 # 109A-30, Bogotá.
 - Reporte de irregularidades/seguridad: **ciberseguridad@skandia.com.co**.
 
 ## Colpensiones

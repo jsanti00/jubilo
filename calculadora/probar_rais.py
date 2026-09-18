@@ -260,20 +260,20 @@ print("=" * 64)
 ANTES_DE_LA_BANDA = {
     "caso-01-porvenir-rais.json": {
         "sexo": None,
-        "mesadas": {"conservador": 1_966_482, "moderado": 2_377_907,
-                    "mayor_riesgo": 2_892_180, "deja_de_cotizar": 390_200},
-        "anticipada": 60,
+        "mesadas": {"conservador": 1_750_905, "moderado": 2_090_605,
+                    "mayor_riesgo": 2_532_935, "deja_de_cotizar": 320_346},
+        "anticipada": 61,
     },
     "caso-02-skandia-rais.json": {
         "sexo": None,
         "mesadas": {"conservador": 1_750_905, "moderado": 1_750_905,
-                    "mayor_riesgo": 1_750_905, "deja_de_cotizar": 251_738},
+                    "mayor_riesgo": 1_750_905, "deja_de_cotizar": 206_082},
         "anticipada": None,
     },
     "caso-03-proteccion-rais.json": {
         "sexo": "M",
-        "mesadas": {"conservador": 12_381_563, "moderado": 15_104_227,
-                    "mayor_riesgo": 18_542_319, "deja_de_cotizar": 2_433_311},
+        "mesadas": {"conservador": 10_870_263, "moderado": 13_200_055,
+                    "mayor_riesgo": 16_136_877, "deja_de_cotizar": 1_980_637},
         "anticipada": 36,
     },
 }
@@ -452,10 +452,20 @@ prosp = ds.RENDIMIENTO_REAL_PROSPECTIVO
 revisar(prosp["conservador"] < prosp["moderado"] < prosp["mayor_riesgo"],
         "el supuesto prospectivo sí es monótono creciente")
 obs = ds.RENDIMIENTO_REAL_OBSERVADO_CENTRAL
-revisar(not (obs["conservador"] < obs["moderado"] < obs["mayor_riesgo"]),
-        "el observado NO es monótono, y sigue sin estarlo: nadie lo arregló")
-revisar(obs["moderado"] < obs["conservador"] and ds.MODERADO_NO_SUPERA_A_CONSERVADOR,
-        "el dato de que el moderado no le ganó al conservador sigue en pie")
+# Antes del 2026-09-18 aquí se comprobaba lo contrario: que el observado NO era
+# monótono, porque con las cifras de prensa el moderado rendía menos que el
+# conservador. Con el dato primario de la SFC sí es monótono, y eso es un
+# resultado, no un maquillaje: lo que se vigila ahora es que el observado siga
+# siendo el dato medido y no una copia del supuesto.
+revisar(obs["conservador"] < obs["moderado"] < obs["mayor_riesgo"],
+        "con el dato primario el observado sí es monótono creciente")
+revisar(not ds.MODERADO_NO_SUPERA_A_CONSERVADOR,
+        "la contradicción del moderado contra el conservador quedó resuelta")
+revisar(obs != ds.RENDIMIENTO_REAL_PROSPECTIVO,
+        "el observado sigue siendo el dato medido, no una copia del supuesto")
+revisar(ds.RENDIMIENTO_REAL_OBSERVADO_ANTERIOR["moderado"][0]
+        < ds.RENDIMIENTO_REAL_OBSERVADO_ANTERIOR["conservador"][0],
+        "la serie de prensa archivada conserva la contradicción que tenía")
 revisar(ds.RENDIMIENTO_REAL == ds.RENDIMIENTO_REAL_PROSPECTIVO,
         "la proyección usa el prospectivo, no el observado")
 
@@ -479,10 +489,15 @@ revisar("Dimson" in ds.FUENTE_PRIMA_RENTA_VARIABLE
 d_sup = diagnosticar(caso, sexo="M", fecha_calculo=FECHA)
 bs = d_sup["banda_rendimiento"]
 print("\n  la salida declara la contradicción")
-revisar("NO le ganó al conservador" in bs["contradiccion_con_lo_observado"],
-        "la salida dice que el moderado no le ganó al conservador")
-revisar("no se borra ni se ajusta" in bs["contradiccion_con_lo_observado"],
-        "la salida dice que el dato observado no se ajusta")
+revisar("desapareció" in bs["contradiccion_con_lo_observado"],
+        "la salida explica que la contradicción se resolvió con el dato primario")
+revisar("2,02%" in bs["contradiccion_con_lo_observado"],
+        "y trae las cifras nuevas para que se pueda verificar")
+revisar(bs["observado_ultimos_5_anios"]["moderado"][0] < 0
+        and "no se esconde" in bs["advertencia_ultimos_5_anios"],
+        "la salida entrega la ventana de 5 años sin maquillarla")
+revisar("sigue siendo el dato" in bs["contradiccion_con_lo_observado"],
+        "la salida sigue diciendo que el observado manda sobre el supuesto")
 revisar("LARGO PLAZO" in bs["prospectivo_advertencia"]
         and "no lo que los fondos rindieron" in bs["prospectivo_advertencia"],
         "la salida advierte que la proyección no usa el rendimiento histórico")
@@ -509,15 +524,17 @@ for perfil in ("conservador", "moderado", "mayor_riesgo"):
 d = diagnosticar(caso, sexo="M", fecha_calculo=FECHA)
 br = d["banda_rendimiento"]
 revisar("Superintendencia Financiera" in br["observado_fuente"]
-        and "Colombiano" in br["observado_fuente"],
-        "el rango de rendimiento declara su fuente")
-revisar("MEDIA" in br["observado_confianza"],
-        "el rango de rendimiento declara confianza MEDIA")
+        and "hds9-4524" in br["observado_fuente"],
+        "el rango declara su fuente y el dataset primario de donde sale")
+revisar("ALTA" in br["observado_confianza"],
+        "el rango declara confianza ALTA, porque ya es dato primario")
+revisar("rendimiento_afp.py" in br["observado_fuente"],
+        "la fuente dice con qué script se reproduce el cálculo")
 revisar("NO es riesgo de mercado" in br["que_significa_el_rango"]
         and "AFP" in br["que_significa_el_rango"],
         "la salida dice que el rango es entre administradoras, no riesgo de mercado")
-revisar(br["moderado_no_supera_a_conservador"],
-        "la salida declara que el moderado no le ganó al conservador")
+revisar(not br["moderado_no_supera_a_conservador"],
+        "la bandera de la contradicción viaja en la salida, hoy apagada")
 
 # --- 3. Cada escenario trae la banda de administradora, ordenada ---
 print("\n  las dos bandas en cada escenario")
@@ -620,6 +637,112 @@ for sexo_x, dx in (("M", d_h), ("F", d_m)):
     revisar(all(e["mesada_conservadora"] <= e["mesada"]
                 for e in dx["escenarios"].values()),
             f"sexo {sexo_x}: la banda sigue ordenada con el piso de reserva")
+
+# --- 6. La convergencia obligatoria hacia el fondo conservador ---
+# Verificado contra el texto literal del Decreto 2555 de 2010, artículos
+# 2.6.11.1.5 y 2.6.11.1.6, el 2026-09-18. Lo que se prueba aquí es que la tabla
+# del código sea la tabla de la norma, incluido el corrimiento de dos años que
+# mete el parágrafo 2 y que es lo más fácil de pasar por alto.
+print("\n  la convergencia obligatoria por edad")
+
+# La tabla tal como queda después del parágrafo 2: mujeres desde 52, hombres
+# desde 57, y 20 puntos más cada año hasta el 100%.
+TABLA_ESPERADA = [
+    ("F", 51, 0.00), ("F", 52, 0.20), ("F", 53, 0.40), ("F", 54, 0.60),
+    ("F", 55, 0.80), ("F", 56, 1.00), ("F", 70, 1.00),
+    ("M", 56, 0.00), ("M", 57, 0.20), ("M", 58, 0.40), ("M", 59, 0.60),
+    ("M", 60, 0.80), ("M", 61, 1.00), ("M", 75, 1.00),
+]
+for sexo_c, edad_c, esperado in TABLA_ESPERADA:
+    obtenido = ds.mezcla_obligatoria(sexo_c, edad_c)["conservador"]
+    revisar(abs(obtenido - esperado) < 1e-9,
+            f"{sexo_c} de {edad_c} años: {esperado:.0%} en conservador por ley")
+
+# El reparto del 2.6.11.1.5 entre mayor riesgo y moderado, para quien no eligió.
+revisar(ds.mezcla_obligatoria("F", 41)["mayor_riesgo"] == 1.0,
+        "mujer de 41: todavía toda en mayor riesgo")
+revisar(abs(ds.mezcla_obligatoria("F", 42)["moderado"] - 0.20) < 1e-9,
+        "mujer de 42: arranca el paso al moderado con 20%")
+revisar(ds.mezcla_obligatoria("M", 46)["mayor_riesgo"] == 1.0,
+        "hombre de 46: todavía todo en mayor riesgo (arranca a los 47)")
+revisar(abs(ds.mezcla_obligatoria("M", 51)["moderado"] - 1.0) < 1e-9,
+        "hombre de 51: ya todo el saldo libre en moderado")
+
+# Las tres partes siempre suman uno: si no, el saldo se estaría perdiendo.
+for sexo_c in ("F", "M"):
+    for edad_c in range(30, 80):
+        m = ds.mezcla_obligatoria(sexo_c, edad_c)
+        suma = m["conservador"] + m["moderado"] + m["mayor_riesgo"]
+        if abs(suma - 1.0) > 1e-9:
+            revisar(False, f"{sexo_c} de {edad_c}: las partes suman {suma}, no 1")
+            break
+    else:
+        revisar(True, f"sexo {sexo_c}: las tres partes suman 1 en todas las edades")
+
+# Sin sexo o sin edad no se inventa una mezcla.
+revisar(ds.mezcla_obligatoria(None, 60) is None, "sin sexo no se inventa la mezcla")
+revisar(ds.mezcla_obligatoria("M", None) is None, "sin edad no se inventa la mezcla")
+
+# Y lo que de verdad importa para el usuario: que no se le ofrezca un perfil
+# que la ley ya no le permite.
+_, prohibidos_viejo, _ = ds.perfiles_que_la_ley_le_permite("M", 63)
+revisar(set(prohibidos_viejo) == {"moderado", "mayor_riesgo"},
+        "a un hombre de 63 no se le ofrecen ni moderado ni mayor riesgo")
+_, prohibidos_joven, _ = ds.perfiles_que_la_ley_le_permite("M", 35)
+revisar(prohibidos_joven == [],
+        "a un hombre de 35 no se le prohíbe ningún perfil")
+
+# El rendimiento de la mezcla queda entre el del conservador y el del perfil
+# más agresivo que todavía le quede: ni por encima ni por debajo de los dos.
+tasa_mezcla = ds.rendimiento_de_la_mezcla("M", 58, ds.RENDIMIENTO_REAL_PROSPECTIVO)
+revisar(ds.RENDIMIENTO_REAL_PROSPECTIVO["conservador"] <= tasa_mezcla
+        <= ds.RENDIMIENTO_REAL_PROSPECTIVO["mayor_riesgo"],
+        "el rendimiento de la mezcla queda dentro del rango de los perfiles")
+
+# --- 7. Las tasas de rendimiento vienen del dato primario, no de prensa ---
+# Cambiadas el 2026-09-18. Se fijan aquí porque mueven TODAS las proyecciones:
+# si alguien las toca sin querer, esta prueba se pone roja y se da cuenta.
+print("\n  las tasas de rendimiento observado")
+
+ESPERADO_OBSERVADO = {
+    "conservador": (0.0193, 0.0211),
+    "moderado": (0.0227, 0.0325),
+    "mayor_riesgo": (0.0331, 0.0413),
+}
+for perfil, rango in ESPERADO_OBSERVADO.items():
+    revisar(ds.RENDIMIENTO_REAL_OBSERVADO[perfil] == rango,
+            f"{perfil}: el rango observado es el del dato primario de la SFC")
+
+revisar("hds9-4524" in ds.FUENTE_RENDIMIENTO and "ALTA" in ds.FUENTE_RENDIMIENTO,
+        "la fuente dice de qué dataset sale y que la confianza es ALTA")
+
+# El orden entre perfiles tiene que respetarse, en la evidencia y en el supuesto.
+for serie, nombre in ((ds.RENDIMIENTO_REAL_OBSERVADO_CENTRAL, "observado"),
+                      (ds.RENDIMIENTO_REAL_PROSPECTIVO, "prospectivo")):
+    revisar(serie["conservador"] < serie["moderado"] < serie["mayor_riesgo"],
+            f"{nombre}: conservador < moderado < mayor riesgo")
+
+# Con el dato primario la contradicción desapareció. Si vuelve, hay que saberlo.
+revisar(not ds.MODERADO_NO_SUPERA_A_CONSERVADOR,
+        "con el dato primario el moderado ya le gana al conservador")
+
+# Y el supuesto prospectivo quedó pegado a la evidencia: menos de medio punto
+# de diferencia en cada perfil. Eso es lo que lo valida.
+for perfil in ESPERADO_OBSERVADO:
+    brecha = abs(ds.RENDIMIENTO_REAL_PROSPECTIVO[perfil]
+                 - ds.RENDIMIENTO_REAL_OBSERVADO_CENTRAL[perfil])
+    revisar(brecha < 0.005,
+            f"{perfil}: el supuesto no se despega de la evidencia (brecha {brecha:.3%})")
+
+# Los últimos 5 años se guardan aparte y NO los usa la proyección.
+revisar(ds.RENDIMIENTO_REAL_ULTIMOS_5_ANIOS["moderado"][0] < 0,
+        "el dato de 5 años conserva el moderado negativo, sin maquillar")
+revisar(ds.RENDIMIENTO_REAL_PROSPECTIVO != ds.RENDIMIENTO_REAL_ULTIMOS_5_ANIOS,
+        "la proyección no usa la ventana de 5 años")
+
+# Y la serie anterior queda guardada, para poder reconstruir un diagnóstico viejo.
+revisar(ds.RENDIMIENTO_REAL_OBSERVADO_ANTERIOR["moderado"] == (0.0197, 0.0315),
+        "la serie de prensa queda archivada para reconstruir diagnósticos previos")
 
 print()
 if fallas:

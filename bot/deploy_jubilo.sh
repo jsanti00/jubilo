@@ -44,6 +44,11 @@ python3 -c "import ast,sys,pathlib; ast.parse(pathlib.Path(sys.argv[1]).read_tex
 echo "1b/5 Corriendo las pruebas del cuaderno de bitacora..."
 python3 -B "$(dirname "$ORIGEN")/probar_registro.py" > /dev/null
 
+# Y las del propio bot: el filtro que impide que un mensaje del CLI le llegue a
+# una persona, y la huella que reconoce un documento reenviado.
+echo "1c/5 Corriendo las pruebas del bot..."
+python3 -B "$(dirname "$ORIGEN")/probar_bot.py" > /dev/null
+
 # Copia de seguridad de la versión que está corriendo ahora mismo, por si hay
 # que volver atrás. Se guarda con la fecha y hora en el nombre.
 echo "2/5 Guardando copia de la version actual en el servidor..."

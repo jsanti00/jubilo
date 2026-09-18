@@ -328,15 +328,21 @@ r = av.proyectar_aporte_voluntario_en_rango(120, "moderado",
                                             afp="porvenir", smlmv=SMLMV_2026)
 revisar(r["capital_piso"] < r["capital_techo"],
         "el rango observado produce un piso y un techo de capital")
-revisar(r["rendimiento_piso"] == 0.0197 and r["rendimiento_techo"] == 0.0315,
-        "el rango observado del moderado es 1,97% a 3,15% (SFC, 2011 a 2024)")
-revisar("Power BI" in r["fuente_del_rango"],
-        "el rango declara por qué no se verificó en el dato crudo de la SFC")
-# El central prospectivo del moderado (3,49%) supera el techo observado, así
-# que su capital queda POR ENCIMA del techo del rango. No es un error: son dos
-# cifras que responden preguntas distintas.
-revisar(r["capital_central"] > r["capital_techo"],
-        "el capital del supuesto prospectivo supera el del techo observado")
+# Actualizado el 2026-09-18: el rango ya no viene de prensa, viene del dato
+# primario diario de la SFC (dataset hds9-4524), medido sobre el mismo periodo
+# para las cuatro AFP. Ver datos_sistema.FUENTE_RENDIMIENTO.
+revisar(r["rendimiento_piso"] == 0.0227 and r["rendimiento_techo"] == 0.0325,
+        "el rango observado del moderado es 2,27% a 3,25% (dato primario SFC)")
+revisar("hds9-4524" in r["fuente_del_rango"]
+        and "ALTA" in r["fuente_del_rango"],
+        "el rango declara el dataset primario del que sale y su confianza ALTA")
+# Antes el central prospectivo del moderado (3,49%) se salía por encima del
+# techo observado (3,15%), y su capital quedaba por encima del techo del rango.
+# Con el dato primario el prospectivo (2,90%) cae DENTRO del rango observado
+# (2,27% a 3,25%), así que su capital queda entre el piso y el techo. Eso es
+# mejor: el supuesto dejó de sobresalir de la evidencia.
+revisar(r["capital_piso"] < r["capital_central"] < r["capital_techo"],
+        "el capital del supuesto ahora cae dentro del rango observado")
 
 # VIGILANCIA DE LAS DOS CONSTANTES, separadas a propósito (2026-07-27).
 # Desde que la proyección usa un supuesto PROSPECTIVO, hay dos cosas distintas
@@ -352,10 +358,17 @@ for perfil, (piso, techo) in av.RENDIMIENTO_REAL_OBSERVADO.items():
 # La evidencia NO es monótona, y eso se conserva escrito. Si un día alguien
 # "arregla" el dato para que el moderado le gane al conservador, esta aserción
 # lo caza: sería cambiar la evidencia para que se parezca al supuesto.
-revisar(RENDIMIENTO_REAL_OBSERVADO_CENTRAL["moderado"]
-        < RENDIMIENTO_REAL_OBSERVADO_CENTRAL["conservador"],
-        "la evidencia sigue diciendo que el moderado observado rindió menos "
-        "que el conservador (no se maquilla para que ordene bonito)")
+# Hasta el 2026-09-18 aquí se comprobaba que la evidencia NO era monótona,
+# porque con las cifras de prensa el moderado rendía menos que el conservador.
+# Con el dato primario sí es monótona. Eso no es maquillaje: es que el dato
+# cambió de fuente, de prensa a la serie primaria de la SFC. Lo que se sigue
+# vigilando es que el observado no sea una copia del supuesto.
+revisar(RENDIMIENTO_REAL_OBSERVADO_CENTRAL["conservador"]
+        < RENDIMIENTO_REAL_OBSERVADO_CENTRAL["moderado"]
+        < RENDIMIENTO_REAL_OBSERVADO_CENTRAL["mayor_riesgo"],
+        "con el dato primario la evidencia sí ordena de menor a mayor riesgo")
+revisar(RENDIMIENTO_REAL_OBSERVADO_CENTRAL != RENDIMIENTO_REAL,
+        "y el observado sigue siendo el dato medido, no una copia del supuesto")
 
 # (b) LO QUE USA LA PROYECCIÓN. Que salga de la fórmula, no de un número
 #     escrito a mano. Se reconstruye aquí de forma independiente: ancla del
@@ -378,9 +391,9 @@ cerca(RENDIMIENTO_REAL["conservador"],
 # Se deja fijado para que quede claro que la prueba lo sabe y lo acepta.
 fuera = [p for p, (piso, techo) in av.RENDIMIENTO_REAL_OBSERVADO.items()
          if not (piso <= RENDIMIENTO_REAL[p] <= techo)]
-revisar(set(fuera) == {"moderado", "mayor_riesgo"},
-        "el prospectivo sale por encima del rango observado solo en moderado y "
-        f"mayor riesgo, por decisión de producto (hoy: {sorted(fuera)})")
+revisar(fuera == [],
+        "con el dato primario el prospectivo ya no se sale del rango observado "
+        f"en ningún perfil (hoy: {sorted(fuera)})")
 
 # Y el módulo consume las constantes de datos_sistema, no copias propias
 from datos_sistema import RENDIMIENTO_REAL_OBSERVADO as OBSERVADO_ORIGEN
@@ -393,7 +406,7 @@ revisar(r["naturaleza_del_rango"].startswith("DATO"),
         "el rango observado sale etiquetado como DATO")
 revisar(r["naturaleza_del_central"].startswith("SUPUESTO"),
         "el central prospectivo sale etiquetado como SUPUESTO")
-revisar(r["central_fuera_del_rango_observado"] is True,
+revisar(r["central_fuera_del_rango_observado"] is False,
         "y la salida avisa que el central del moderado queda fuera del "
         "rango observado")
 

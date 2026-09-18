@@ -167,6 +167,54 @@ revisar(not registro.parece_diagnostico(None),
 
 
 # ---------------------------------------------------------------------------
+# Las columnas nuevas de tokens, y que una base vieja se actualice sola
+# ---------------------------------------------------------------------------
+
+print("\nEl desglose de tokens de entrada")
+
+with tempfile.TemporaryDirectory() as carpeta:
+    # Primero se simula una base "vieja": la tabla `turnos` sin las tres
+    # columnas nuevas. Es lo que hay hoy en el servidor.
+    vieja = Path(carpeta) / "vieja.db"
+    con = sqlite3.connect(vieja)
+    con.execute("""
+        CREATE TABLE turnos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            seudonimo TEXT NOT NULL, ts TEXT NOT NULL,
+            texto_usuario TEXT, respuesta TEXT, tuvo_adjunto INTEGER,
+            resultado TEXT, espera_cola_ms INTEGER, latencia_ms INTEGER,
+            costo_usd REAL, tokens_entrada INTEGER, tokens_salida INTEGER,
+            turnos_internos INTEGER
+        )
+    """)
+    con.commit(); con.close()
+
+    # Al arrancar, el modulo tiene que anadirle las columnas que le faltan.
+    registro.inicializar(vieja)
+    con = sqlite3.connect(vieja)
+    columnas = {f[1] for f in con.execute("PRAGMA table_info(turnos)")}
+    con.close()
+    revisar({"tokens_frescos", "tokens_cache", "tokens_cache_creado"} <= columnas,
+            "una base que ya existia recibe las columnas nuevas sin perder nada")
+
+    # Y una base nueva tiene que poder guardarlas.
+    db = Path(carpeta) / "nueva.db"
+    registro.inicializar(db)
+    registro.anotar_turno(db, seudonimo="abc123", ts="2026-09-18T10:00:00-05:00",
+                          texto_usuario="hola", respuesta="hola, cuentame",
+                          tokens_entrada=61792, tokens_frescos=1792,
+                          tokens_cache=58000, tokens_cache_creado=2000)
+    con = sqlite3.connect(db)
+    fila = con.execute("SELECT tokens_entrada, tokens_frescos, tokens_cache, "
+                       "tokens_cache_creado FROM turnos").fetchone()
+    con.close()
+    revisar(fila == (61792, 1792, 58000, 2000),
+            "el desglose de tokens queda guardado tal como entro")
+    revisar(fila[0] == fila[1] + fila[2] + fila[3],
+            "el total de entrada es la suma de las tres partes")
+
+
+# ---------------------------------------------------------------------------
 # Resultado
 # ---------------------------------------------------------------------------
 

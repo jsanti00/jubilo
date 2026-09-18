@@ -13,7 +13,9 @@ from datos_sistema import (
     RENDIMIENTO_REAL_PROSPECTIVO, FUENTE_RENDIMIENTO, ADVERTENCIA_RENDIMIENTO,
     ADVERTENCIA_PROSPECTIVO, FUENTE_PRIMA_RENTA_VARIABLE,
     EXPOSICION_RENTA_VARIABLE, PRIMA_RENTA_VARIABLE_LARGO_PLAZO,
-    MODERADO_NO_SUPERA_A_CONSERVADOR,
+    MODERADO_NO_SUPERA_A_CONSERVADOR, RENDIMIENTO_REAL_ULTIMOS_5_ANIOS,
+    mezcla_obligatoria, perfiles_que_la_ley_le_permite,
+    rendimiento_de_la_mezcla, FUENTE_CONVERGENCIA,
     INTERES_MERCADO, FUENTE_FACTOR, MESADAS, interes_mercado, factor_mercado,
     FACTOR_MERCADO_REFERENCIA, FACTOR_MERCADO_REFERENCIA_SEXO,
     FACTOR_MERCADO_REFERENCIA_EDAD, ANIO_DECRETO_1485, CAPITAL_RV_UN_SMLMV,
@@ -431,12 +433,41 @@ def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
             "auditoría. No se le muestra al usuario: ver REGLA_DOS_BANDAS")
         return fila
 
+    # --- Lo que la ley le obliga a tener en el fondo conservador ---
+    # A partir de cierta edad el saldo se va pasando al conservador, quiera o
+    # no. Sin esto, a alguien de 60 años se le mostraria el escenario de mayor
+    # riesgo como si pudiera elegirlo, y no puede. Ver `mezcla_obligatoria`.
+    mezcla_legal = mezcla_obligatoria(sexo, edad)
+    permitidos, prohibidos, explicacion_convergencia = perfiles_que_la_ley_le_permite(sexo, edad)
+
     escenarios = {}
     if saldo is not None:
         for perfil in RENDIMIENTO_REAL_PROSPECTIVO:
             # Escenario "sigue cotizando": saldo crece con rendimiento + aportes
             escenarios[perfil] = escenario_de_perfil(perfil, aporte_mensual,
                                                      semanas_futuras)
+            # Si la convergencia ya le quito ese perfil, el escenario se calcula
+            # igual (sirve de referencia y para auditar) pero queda marcado para
+            # que el agente no se lo ofrezca como una opcion que tiene.
+            if perfil in prohibidos:
+                escenarios[perfil]["prohibido_por_convergencia"] = True
+                escenarios[perfil]["no_comunicar_como_opcion"] = explicacion_convergencia
+
+        # El escenario que de verdad le aplica: la mezcla que exige la ley, con
+        # el rendimiento pesado por cuanto saldo va a cada fondo. Solo existe
+        # cuando ya le arranco la convergencia; antes de eso, la mezcla es el
+        # perfil que haya elegido y no hay nada que promediar.
+        if mezcla_legal and mezcla_legal["conservador"] > 0:
+            tasa_mezclada = rendimiento_de_la_mezcla(sexo, edad,
+                                                     RENDIMIENTO_REAL_PROSPECTIVO)
+            saldo_mezclado = proyectar_saldo(saldo, aporte_mensual,
+                                             meses_futuros, tasa_mezclada)
+            fila_mezcla = escenario_desde_saldo(saldo_mezclado, semanas_futuras)
+            fila_mezcla["rendimiento_usado"] = tasa_mezclada
+            fila_mezcla["mezcla"] = {k: v for k, v in mezcla_legal.items()
+                                     if k != "fuente"}
+            fila_mezcla["por_que_este_y_no_los_otros"] = explicacion_convergencia
+            escenarios["mezcla_obligatoria_por_edad"] = fila_mezcla
 
         # Escenario "deja de cotizar hoy" (perfil moderado): solo rinde el saldo
         escenarios["deja_de_cotizar"] = escenario_de_perfil("moderado", 0,
@@ -518,12 +549,23 @@ def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
         "banda_factor": declaracion_banda(expectativa, sexo, anio_edad_legal),
         # La segunda banda del RAIS, la del rendimiento, con su fuente y su
         # advertencia. Va separada de la del factor a propósito: no se mezclan.
+        # Lo que la ley le obliga a tener en cada fondo por su edad. Viaja con
+        # el diagnostico para que el agente no ofrezca un perfil que no puede
+        # elegir, y para que pueda explicar por que su banda se estrecha.
+        "convergencia_obligatoria": {
+            "mezcla": ({k: v for k, v in mezcla_legal.items() if k != "fuente"}
+                       if mezcla_legal else None),
+            "perfiles_permitidos": permitidos,
+            "perfiles_prohibidos": prohibidos,
+            "explicacion": explicacion_convergencia,
+            "fuente": FUENTE_CONVERGENCIA,
+        },
         "banda_rendimiento": {
             # EVIDENCIA: lo que rindieron los fondos en el periodo medido
             "observado_rangos": dict(RENDIMIENTO_REAL_OBSERVADO),
             "observado_centrales": dict(RENDIMIENTO_REAL_OBSERVADO_CENTRAL),
             "observado_fuente": FUENTE_RENDIMIENTO,
-            "observado_confianza": "MEDIA (fuente secundaria que cita a la SFC)",
+            "observado_confianza": "ALTA (dato primario diario de la SFC, reproducible)",
             # SUPUESTO: lo que usa la proyección, por decisión de producto
             "prospectivo": dict(RENDIMIENTO_REAL_PROSPECTIVO),
             "prospectivo_advertencia": ADVERTENCIA_PROSPECTIVO,
@@ -545,15 +587,30 @@ def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
                 "completo, cosa que ninguno hace, así que el supuesto es el borde "
                 "optimista de la construcción"),
             "que_significa_el_rango": ADVERTENCIA_RENDIMIENTO,
-            # La contradicción, escrita y no maquillada
+            # La contradicción que hubo, y como se resolvio. Se deja escrita
+            # porque explica por que el supuesto prospectivo existe.
             "contradiccion_con_lo_observado": (
-                "en el único periodo medido por la Superfinanciera (2011 a 2024) "
-                "el punto central del perfil moderado (2,56%) quedó POR DEBAJO "
-                "del conservador (2,61%): el moderado NO le ganó al conservador. "
-                "La proyección usa un supuesto de largo plazo que asume lo "
-                "contrario, por decisión de producto de Santiago del 2026-07-28. "
-                "El dato observado no se borra ni se ajusta: si la pregunta es "
-                "qué rindió cada fondo, la respuesta es el dato, no el supuesto"),
+                "hasta el 2026-09-18 había una contradicción: con las cifras de "
+                "prensa, el moderado (2,56%) rendía MENOS que el conservador "
+                "(2,61%), y el supuesto de la proyección asumía lo contrario. "
+                "Con el dato primario de la Superfinanciera, medido sobre el "
+                "mismo periodo para las cuatro AFP, la contradicción "
+                "desapareció: conservador 2,02%, moderado 2,76%, mayor riesgo "
+                "3,72%, en el orden esperado. El supuesto y la evidencia ahora "
+                "casi coinciden, lo que valida el supuesto. Si la pregunta es "
+                "qué rindió cada fondo, la respuesta sigue siendo el dato "
+                "observado, no el supuesto"),
+            # Ojo con el periodo: los ultimos 5 anos cuentan otra historia y el
+            # agente tiene que poder decirla si le preguntan por el corto plazo.
+            "observado_ultimos_5_anios": dict(RENDIMIENTO_REAL_ULTIMOS_5_ANIOS),
+            "advertencia_ultimos_5_anios": (
+                "en los últimos 5 años (agosto de 2021 a agosto de 2026) los "
+                "portafolios defensivos destruyeron valor real: todo el "
+                "conservador rindió menos del 1% real anual y el moderado de una "
+                "AFP quedó negativo. La inflación de ese periodo (7,91% "
+                "anualizada) se comió el rendimiento nominal. La proyección NO "
+                "usa esta ventana, porque cinco años es corto para un horizonte "
+                "pensional, pero el dato no se esconde"),
             "moderado_no_supera_a_conservador": MODERADO_NO_SUPERA_A_CONSERVADOR,
         },
         # Cómo conviven las dos bandas, para que el agente pueda explicarlo

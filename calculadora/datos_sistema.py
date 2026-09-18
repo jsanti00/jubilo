@@ -460,18 +460,61 @@ FUENTE_FACTOR = {
 # por encima del techo del rango, que es el peor sitio para equivocarse porque
 # es el perfil por defecto de buena parte de los afiliados.
 #
-# FUENTE: Superintendencia Financiera, periodo marzo 2011 a octubre 2024, vía El
-# Colombiano del 15 de enero de 2025. Confianza MEDIA (fuente secundaria que cita
-# a la SFC; el dato crudo vive en un tablero de Power BI que no se puede extraer
-# de forma automatizada, así que no se leyó el original).
+# FUENTE, hasta el 2026-09-18: Superintendencia Financiera, periodo marzo 2011 a
+# octubre 2024, vía El Colombiano del 15 de enero de 2025, confianza MEDIA. Esa
+# fuente se REEMPLAZÓ el 2026-09-18 por el dato primario. La construcción a
+# rango, que es la decisión de Santiago del 2026-07-27, se mantiene igual: lo
+# único que cambió son los números y su confianza. Ver abajo.
+# ACTUALIZADO EL 2026-09-18: estas cifras ya NO vienen de prensa.
+#
+# De dónde salen ahora. Del dato primario DIARIO de la Superfinanciera,
+# publicado en datos.gov.co (dataset `hds9-4524`, propiedad de la SFC, con
+# frecuencia de actualización diaria, verificada el 2026-09-18). Se bajó la
+# serie completa, se derivó el valor de la unidad de cada fondo (el dataset no
+# lo publica: es el valor del fondo en pesos dividido por el número de
+# unidades), se tomó el cierre de cada mes y se anualizó geométricamente. La
+# inflación para pasar de nominal a real es el índice del DANE que publica el
+# Banco de la República. El script está en `analisis/rendimiento_afp.py` y se
+# puede volver a correr.
+#
+# POR QUÉ ESTO ES MEJOR QUE LO QUE HABÍA, y son tres razones:
+#   1. Es dato primario, no una nota de prensa que cita a la SFC. Confianza ALTA.
+#   2. Las cuatro AFP comparten EXACTAMENTE el mismo periodo (140 cierres
+#      mensuales, enero de 2015 a agosto de 2026), así que el rango de verdad
+#      compara administradoras entre sí. Las cifras de prensa mezclaban
+#      periodos distintos por fondo, así que su rango comparaba peras con manzanas.
+#   3. Se puede reproducir y auditar. La cifra anterior no.
+#
+# POR QUÉ ES LA MEDIDA CORRECTA PARA ESTA CALCULADORA. Es la rentabilidad DEL
+# FONDO, no la del afiliado: no descuenta la comisión de administración ni el
+# seguro previsional. Y así tiene que ser, porque esta calculadora ya los
+# descuenta antes, en `APORTE_A_CUENTA_RAIS` (de cada peso cotizado solo entra
+# a la cuenta el 11,5%). Si además se descontaran aquí, se estarían cobrando
+# dos veces.
 #
 # QUÉ SIGNIFICA ESTE RANGO, Y ES LO QUE MÁS IMPORTA: es un rango POR
 # ADMINISTRADORA, no una banda de riesgo de mercado. La distancia entre los dos
 # extremos no es "cómo le puede ir a la bolsa", es CON CUÁL AFP ESTÁ EL USUARIO.
-# Eso cambia por completo lo que la persona puede hacer al respecto: es una
-# palanca accionable, no una incertidumbre que le toque aguantar. La salida del
-# diagnóstico lo dice con esas palabras.
 RENDIMIENTO_REAL_OBSERVADO = {
+    "conservador": (0.0193, 0.0211),      # peor Protección, mejor Porvenir
+    "moderado": (0.0227, 0.0325),         # peor Colfondos, mejor Porvenir
+    "mayor_riesgo": (0.0331, 0.0413),     # peor Protección, mejor Colfondos
+}
+
+# Los últimos 5 años, aparte. NO los usa la proyección, y por una razón: cinco
+# años es una ventana corta y la inflación de 2021 a 2026 (7,91% anualizada) fue
+# excepcional. Pero el dato importa y no se esconde, porque dice algo fuerte:
+# en ese periodo los portafolios defensivos DESTRUYERON valor real. Todo el
+# conservador rindió menos del 1% real, y el moderado de una AFP quedó negativo.
+RENDIMIENTO_REAL_ULTIMOS_5_ANIOS = {
+    "conservador": (0.0039, 0.0088),
+    "moderado": (-0.0047, 0.0104),
+    "mayor_riesgo": (0.0200, 0.0237),
+}
+
+# La serie que se reemplazó, conservada para poder reconstruir con qué números
+# se calculó un diagnóstico anterior al 2026-09-18. No se usa.
+RENDIMIENTO_REAL_OBSERVADO_ANTERIOR = {
     "conservador": (0.0253, 0.0269),
     "moderado": (0.0197, 0.0315),
     "mayor_riesgo": (0.0288, 0.0425),
@@ -481,10 +524,22 @@ RENDIMIENTO_REAL_OBSERVADO = {
 RENDIMIENTO_REAL_RANGO = RENDIMIENTO_REAL_OBSERVADO
 
 FUENTE_RENDIMIENTO = (
-    "Superintendencia Financiera, periodo marzo 2011 a octubre 2024, vía El "
-    "Colombiano del 15 de enero de 2025. Rango POR ADMINISTRADORA, no promedio "
-    "ponderado del sistema. Confianza MEDIA (fuente secundaria que cita a la "
-    "SFC; el dato crudo está en un tablero de Power BI no extraíble)"
+    "Superintendencia Financiera de Colombia, dato primario diario del dataset "
+    "hds9-4524 de datos.gov.co, periodo enero de 2015 a agosto de 2026 (140 "
+    "cierres mensuales, el mismo periodo para las cuatro AFP). Valor de la "
+    "unidad derivado del valor del fondo entre el número de unidades; "
+    "anualización geométrica; inflación del índice DANE publicado por el Banco "
+    "de la República (5,85% anualizado en el periodo). Rango POR ADMINISTRADORA, "
+    "no promedio ponderado del sistema. Es rentabilidad DEL FONDO, no del "
+    "afiliado: la comisión ya se descuenta en APORTE_A_CUENTA_RAIS. Confianza "
+    "ALTA (fuente primaria, reproducible con analisis/rendimiento_afp.py)"
+)
+
+FUENTE_RENDIMIENTO_ANTERIOR = (
+    "Hasta el 2026-09-18 se usó: Superintendencia Financiera, periodo marzo 2011 "
+    "a octubre 2024, vía El Colombiano del 15 de enero de 2025. Confianza MEDIA "
+    "(fuente secundaria; el dato crudo estaba en un tablero de Power BI no "
+    "extraíble). Se reemplazó por el dato primario"
 )
 
 ADVERTENCIA_RENDIMIENTO = (
@@ -502,11 +557,27 @@ RENDIMIENTO_REAL_OBSERVADO_CENTRAL = {
     perfil: round((piso + techo) / 2, 6)
     for perfil, (piso, techo) in RENDIMIENTO_REAL_OBSERVADO.items()}
 
-# LA CONTRADICCIÓN, ESCRITA Y NO MAQUILLADA. En el único periodo medido por la
-# Superfinanciera el punto central del perfil MODERADO (2,56%) queda POR DEBAJO
-# del conservador (2,61%): el fondo moderado NO le ganó al conservador. Es el
-# dato, y se conserva visible. La proyección usa otro número (el prospectivo de
-# abajo) por decisión de producto, pero la evidencia no se toca ni se ajusta.
+# LA CONTRADICCIÓN QUE HABÍA, Y QUE EL DATO PRIMARIO RESOLVIÓ (2026-09-18).
+#
+# Con las cifras de prensa que se usaron hasta el 2026-09-18, el punto central
+# del perfil MODERADO (2,56%) quedaba POR DEBAJO del conservador (2,61%): el
+# fondo moderado no le ganaba al conservador. Eso era raro, iba contra la
+# intuición financiera, y era la razón por la que el supuesto prospectivo de
+# abajo se tuvo que construir a mano importando una prima de renta variable de
+# una serie mundial, en vez de usar la evidencia colombiana.
+#
+# Con el dato primario de la Superfinanciera, medido sobre el mismo periodo
+# para las cuatro AFP, la contradicción DESAPARECE: conservador 2,02%, moderado
+# 2,76%, mayor riesgo 3,72%, en el orden esperado.
+#
+# Y hay algo más, que es la mejor noticia de este cambio: el supuesto
+# prospectivo y la evidencia ahora casi coinciden (moderado 2,90% prospectivo
+# contra 2,76% observado, mayor riesgo 3,77% contra 3,72%). O sea que la prima
+# importada de la serie mundial reproduce lo que de verdad pasó en Colombia.
+# Eso valida el supuesto en vez de debilitarlo, y es la razón para no tocarlo.
+#
+# Esta bandera se deja calculada y no fija en False a propósito: si mañana se
+# actualiza la serie y la contradicción vuelve, el código se da cuenta solo.
 MODERADO_NO_SUPERA_A_CONSERVADOR = (
     RENDIMIENTO_REAL_OBSERVADO_CENTRAL["moderado"]
     < RENDIMIENTO_REAL_OBSERVADO_CENTRAL["conservador"])
@@ -590,10 +661,13 @@ RENDIMIENTO_REAL = dict(RENDIMIENTO_REAL_PROSPECTIVO)
 
 ADVERTENCIA_PROSPECTIVO = (
     "la proyección usa un supuesto de rendimiento de LARGO PLAZO, no lo que los "
-    "fondos rindieron de verdad. En el único periodo medido por la "
-    "Superfinanciera (2011 a 2024) el fondo moderado rindió MENOS que el "
-    "conservador, y este supuesto asume lo contrario. Si la pregunta es qué "
-    "rindió cada fondo, la respuesta es el dato observado, no este supuesto"
+    "fondos rindieron de verdad. Desde el 2026-09-18 ese supuesto y la "
+    "evidencia primaria de la Superfinanciera casi coinciden (moderado 2,90% "
+    "supuesto contra 2,76% observado), así que la diferencia dejó de ser "
+    "material. Aun así son dos cosas distintas: si la pregunta es qué rindió "
+    "cada fondo, la respuesta es el dato observado, no este supuesto. Y ojo con "
+    "el periodo: en los últimos 5 años los portafolios defensivos rindieron muy "
+    "por debajo de su propio promedio de largo plazo"
 )
 
 # Fecha en que entró a regir el Decreto 959 de 2018: cambió el perfil por
@@ -644,6 +718,144 @@ def perfil_por_defecto(fecha_afiliacion, sexo, edad):
                                      "(mezcla de mayor riesgo y moderado)")
             return perfil, True, f"default de ley para su edad y sexo: {perfil}"
     return "conservador", True, "default de ley para su edad y sexo: conservador"
+
+# ---------------------------------------------------------------------------
+# CONVERGENCIA OBLIGATORIA HACIA EL FONDO CONSERVADOR
+# ---------------------------------------------------------------------------
+# Verificado contra el texto literal de la norma el 2026-09-18. Confianza ALTA.
+#
+# QUÉ ES. A partir de cierta edad la ley OBLIGA a que una parte del saldo esté
+# en el fondo conservador, y esa parte crece 20 puntos cada año hasta llegar al
+# 100%. No es una recomendación ni un default: es obligatorio, y la persona
+# solo puede moverse hacia MÁS conservador, nunca hacia menos.
+#
+# POR QUÉ IMPORTA PARA EL CÁLCULO, y es el hallazgo que motivó esto: sin esta
+# regla, a alguien de 60 años se le podría mostrar el escenario de "mayor
+# riesgo" cuando la ley ya lo tiene mayoritariamente en conservador. Sería una
+# banda optimista de más, y justo para el segmento que está a punto de decidir.
+#
+# LA TRAMPA DE LA NORMA. El cuadro del artículo 2.6.11.1.6 dice 50 años para
+# mujeres y 55 para hombres. Pero su parágrafo 2 dice, textualmente: "A partir
+# del año 2014 las edades señaladas en el cuadro previsto en este artículo se
+# aumentarán en dos (2) años tanto para hombres como para mujeres". O sea que
+# las edades que aplican hoy son 52 y 57. Quien lea el cuadro y no el parágrafo
+# se equivoca por dos años en todo el tramo. Por eso las dos cosas están abajo
+# separadas: la tabla como la trae la norma, y el corrimiento aparte.
+FUENTE_CONVERGENCIA = (
+    "Decreto 2555 de 2010, artículos 2.6.11.1.5 (asignación por defecto, en la "
+    "redacción del Decreto 959 de 2018) y 2.6.11.1.6 (reglas de convergencia). "
+    "Texto literal verificado en el Gestor Normativo de Función Pública el "
+    "2026-09-18. Confianza ALTA"
+)
+
+# Las edades del cuadro del 2.6.11.1.6, tal cual las trae la norma.
+EDAD_BASE_CONVERGENCIA = {"F": 50, "M": 55}
+
+# Lo que les suma el parágrafo 2 del mismo artículo, desde 2014.
+CORRIMIENTO_PARAGRAFO_2 = 2
+
+# El saldo mínimo que debe estar en el conservador, por años cumplidos desde
+# que arranca la convergencia. Posición 0 es el año en que arranca.
+SALDO_MINIMO_CONSERVADOR = [0.20, 0.40, 0.60, 0.80, 1.00]
+
+# La otra mitad: la asignación por defecto del 2.6.11.1.5, que reparte entre
+# mayor riesgo y moderado a quien nunca eligió portafolio. Misma estructura:
+# la edad en que arranca, y cuánto pasa al moderado cada año.
+EDAD_INICIO_DEFECTO = {"F": 42, "M": 47}
+SALDO_MINIMO_MODERADO_POR_DEFECTO = [0.20, 0.40, 0.60, 0.80, 1.00]
+
+
+def mezcla_obligatoria(sexo, edad):
+    """Cómo tiene que estar repartido el saldo de esta persona, por ley.
+
+    Devuelve un diccionario con la fracción de saldo en cada fondo, que suma 1.
+    Sirve para dos cosas: no mostrarle a alguien un escenario que la ley no le
+    permite, y calcular el rendimiento que de verdad le aplica.
+
+    OJO con la diferencia entre las dos reglas que se combinan aquí:
+      - La convergencia al conservador (2.6.11.1.6) aplica a TODO EL MUNDO,
+        haya elegido portafolio o no. Solo se puede ir a más conservador.
+      - El reparto entre mayor riesgo y moderado (2.6.11.1.5) aplica solo a
+        quien NUNCA eligió. Quien eligió se queda donde eligió, en la parte del
+        saldo que la convergencia le deja libre.
+    Por eso esta función devuelve la parte del conservador como obligatoria y
+    el resto como "libre": qué hace con esa parte libre depende de si eligió.
+    """
+    if sexo not in ("F", "M") or edad is None:
+        return None
+
+    # Cuánto del saldo tiene que estar en conservador, sí o sí.
+    arranca = EDAD_BASE_CONVERGENCIA[sexo] + CORRIMIENTO_PARAGRAFO_2
+    anios_dentro = edad - arranca
+    if anios_dentro < 0:
+        conservador = 0.0
+    elif anios_dentro >= len(SALDO_MINIMO_CONSERVADOR):
+        conservador = 1.0
+    else:
+        conservador = SALDO_MINIMO_CONSERVADOR[anios_dentro]
+
+    # Lo que queda libre se reparte, para quien nunca eligió, entre moderado y
+    # mayor riesgo segun la tabla del 2.6.11.1.5.
+    libre = round(1.0 - conservador, 6)
+    inicio = EDAD_INICIO_DEFECTO[sexo]
+    anios_defecto = edad - inicio
+    if anios_defecto < 0:
+        moderado_del_libre = 0.0
+    elif anios_defecto >= len(SALDO_MINIMO_MODERADO_POR_DEFECTO):
+        moderado_del_libre = 1.0
+    else:
+        moderado_del_libre = SALDO_MINIMO_MODERADO_POR_DEFECTO[anios_defecto]
+
+    return {
+        "conservador": round(conservador, 6),
+        "moderado": round(libre * moderado_del_libre, 6),
+        "mayor_riesgo": round(libre * (1 - moderado_del_libre), 6),
+        # La parte del saldo sobre la que la persona todavía decide algo.
+        "libre_de_convergencia": libre,
+        "fuente": FUENTE_CONVERGENCIA,
+    }
+
+
+def perfiles_que_la_ley_le_permite(sexo, edad):
+    """Los perfiles que tiene sentido mostrarle a esta persona, y cuáles no.
+
+    Devuelve (permitidos, prohibidos, explicacion). Un perfil se considera
+    prohibido cuando la convergencia ya se llevó todo el saldo al conservador:
+    ofrecerle "mayor riesgo" a alguien de 61 años no es optimista, es falso.
+    """
+    mezcla = mezcla_obligatoria(sexo, edad)
+    if mezcla is None:
+        return list(RENDIMIENTO_REAL_OBSERVADO), [], (
+            "sin sexo o sin edad no se puede saber qué le exige la convergencia")
+
+    libre = mezcla["libre_de_convergencia"]
+    if libre <= 0:
+        return ["conservador"], ["moderado", "mayor_riesgo"], (
+            "por su edad, la ley ya le exige el 100% del saldo en el fondo "
+            "conservador, así que los otros dos escenarios no le aplican")
+    if mezcla["conservador"] > 0:
+        return (["conservador", "moderado", "mayor_riesgo"], [],
+                f"la ley ya le exige tener el {mezcla['conservador']:.0%} del saldo "
+                "en el fondo conservador, así que ningún escenario puro le aplica "
+                "del todo: lo que le aplica es la mezcla")
+    return list(RENDIMIENTO_REAL_OBSERVADO), [], (
+        "todavía no le arranca la convergencia: puede estar en cualquiera de "
+        "los tres fondos")
+
+
+def rendimiento_de_la_mezcla(sexo, edad, rendimientos):
+    """El rendimiento que de verdad le aplica, pesando cada fondo por su parte.
+
+    `rendimientos` es un diccionario perfil -> tasa (el prospectivo o el
+    observado). Devuelve None si no se sabe el sexo o la edad, porque en ese
+    caso inventar una mezcla sería peor que no dar el número.
+    """
+    mezcla = mezcla_obligatoria(sexo, edad)
+    if mezcla is None:
+        return None
+    return round(sum(mezcla[perfil] * rendimientos[perfil]
+                     for perfil in ("conservador", "moderado", "mayor_riesgo")), 6)
+
 
 # Topes de la mesada: nunca menos de 1 SMLMV ni más de 25 SMLMV.
 TOPE_MESADA_EN_SMLMV = 25

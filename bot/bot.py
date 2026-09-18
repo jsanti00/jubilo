@@ -6,10 +6,12 @@ del usuario que escribió. Nadie comparte contexto con nadie.
 
 import asyncio
 import datetime
+import hashlib
 import json
 import logging
 import os
 import pathlib
+import re
 import sqlite3
 import subprocess
 import time
@@ -55,18 +57,87 @@ ARCHIVO_BIENVENIDA = REPO / "kit-contexto" / "bienvenida-y-aviso.txt"
 # La version del aviso que se esta mostrando hoy. Hay que subirla a mano cada vez
 # que el texto cambie de fondo, porque la ley obliga a poder reconstruir
 # que version vio cada persona.
-VERSION_AVISO = "1.1"
+#
+# 1.2 (2026-09-18): la cedula deja de ser solo una llave para abrir el PDF y
+# pasa a ser un dato que se le transmite a Colpensiones cuando la persona pide
+# que le consigamos su historia laboral. Eso es un tratamiento nuevo y por eso
+# sube la version. El historial de las versiones esta en
+# kit-contexto/aviso-de-privacidad.md.
+VERSION_AVISO = "1.2"
 
 # El secreto con el que se disfraza el chat de Telegram de cada persona antes de
 # anotar nada. Se crea solo la primera vez que arranca el bot y no sale de aqui.
 ARCHIVO_SAL = BASE / "config" / "sal.txt"
 SAL = None                                  # se llena al arrancar, en main()
 
+# --- Los comandos que el bot contesta solo, sin molestar a Claude -----------
+#
+# Por que existe esto: el 2026-09-16 una persona creyo que el bot estaba caido y
+# probo /restart, /refresh, /clear y /start. Esos mensajes se los pasabamos a
+# Claude, que corre sobre el CLI, y el CLI le respondio en ingles y a la cara:
+# "/restart isn't available in this environment". Un mensaje de la infraestructura
+# llego al chat de una persona. Atendiendo los comandos aqui, eso es imposible:
+# el mensaje nunca llega a Claude. De paso ahorra la cuota de esas llamadas.
+
+# El texto con el que se contesta cualquier comando que empiece por barra.
+# Es uno solo y no cambia: quien esta perdido necesita una respuesta estable,
+# no una redaccion distinta cada vez.
+TEXTO_COMANDO = (
+    "Aquí no hacen falta comandos, hablame normal y ya. "
+    "Si te perdiste, escríbeme \"empecemos de nuevo\" y retomamos."
+)
+
+# El unico comando que sí tiene sentido en Telegram, porque es el que se dispara
+# solo al abrir el chat por primera vez.
+TEXTO_START_CONOCIDO = (
+    "Ya nos conocemos, así que no te repito todo. Seguimos donde íbamos: "
+    "si quieres, cuéntame en qué quedamos o mándame tu historia laboral."
+)
+
+# --- El filtro de salida: la segunda capa contra las fugas del CLI ----------
+#
+# Aunque los comandos ya no lleguen a Claude, el CLI puede colar una frase suya
+# por otro camino (un permiso denegado, una herramienta que no existe). Todas
+# esas frases tienen dos cosas en comun: estan en ingles y hablan del entorno.
+# Si la respuesta coincide con alguna, no se manda: se manda un texto propio y
+# el caso queda anotado para verlo en el reporte.
+FUGAS_DEL_CLI = re.compile(
+    r"isn't available|is not available|in this environment|requires approval"
+    r"|permission denied|not allowed to use|no such tool|claude code"
+    r"|--allowedTools|--permission-mode|anthropic",
+    re.IGNORECASE,
+)
+
+TEXTO_FUGA = (
+    "Se me cruzaron los cables con eso. Escríbeme otra vez lo último que "
+    "me dijiste y seguimos."
+)
+
+
+def parece_fuga_del_cli(respuesta):
+    """Dice si la respuesta es un mensaje de la infraestructura y no de Júbilo.
+
+    Solo se activa con respuestas cortas. Un diagnostico largo puede mencionar
+    una de esas palabras de casualidad, y tumbarlo seria mucho peor que dejar
+    pasar una frase rara.
+    """
+    if not respuesta:
+        return False
+    return len(respuesta) < 400 and bool(FUGAS_DEL_CLI.search(respuesta))
+
 def herramientas_de(carpeta):
     """Lo unico que Júbilo puede hacer mientras atiende a una persona.
 
-    Son tres cosas y ninguna mas: leer archivos, escribir, y correr los
-    programas de la calculadora. Nada de internet, en ningun caso.
+    Son cuatro cosas y ninguna mas: leer archivos, escribir, correr los
+    programas de la calculadora, y correr los de `tramites/`.
+
+    **Sobre `tramites/`, que es la unica que toca internet.** El principio del
+    proyecto sigue en pie: el modelo no navega. Lo que puede hacer es ejecutar
+    un programa nuestro, escrito por nosotros, que hace una cosa fija (pedirle
+    a Colpensiones que le mande la historia laboral al correo de la persona) y
+    devuelve un resultado. No es un navegador ni una busqueda: es una
+    herramienta determinista, igual que la calculadora. Ver
+    `tramites/pedir_historia.py`, que empieza explicando sus limites.
 
     El permiso de escribir hace falta porque el flujo del documento guarda la
     extraccion en un JSON. Sin el, ese paso es imposible y Júbilo se queda
@@ -82,12 +153,20 @@ def herramientas_de(carpeta):
          calculadora y el kit no se pueden modificar desde una conversacion,
          aunque a Júbilo lo convenzan de intentarlo. Ver AGENTS.md seccion 4.
     """
-    return f"Read,Write,Bash(python3 {REPO}/calculadora/*)"
+    return f"Read,Write,Bash(python3 {REPO}/calculadora/*),Bash(python3 {REPO}/tramites/*)"
+
+# El log va a un archivo en el servidor. En el Mac esa carpeta no existe, y sin
+# este try no se podria ni importar este archivo para probar sus funciones
+# sueltas. Cuando no se puede escribir el archivo, se escribe solo en pantalla.
+try:
+    destinos_log = [logging.FileHandler(BASE / "bot.log"), logging.StreamHandler()]
+except OSError:
+    destinos_log = [logging.StreamHandler()]
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.FileHandler(BASE / "bot.log"), logging.StreamHandler()],
+    handlers=destinos_log,
 )
 log = logging.getLogger("jubilo")
 
@@ -97,8 +176,12 @@ log = logging.getLogger("jubilo")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-# El archivo de log solo lo puede leer el usuario jubilo.
-os.chmod(BASE / "bot.log", 0o600)
+# El archivo de log solo lo puede leer el usuario jubilo. Mismo caso que arriba:
+# si el archivo no existe (o sea, no estamos en el servidor), no hay nada que cerrar.
+try:
+    os.chmod(BASE / "bot.log", 0o600)
+except OSError:
+    pass
 
 # Cuantas conversaciones se atienden al mismo tiempo. Antes era una sola y la
 # gente hacia fila: con cinco personas escribiendo a la vez, la ultima esperaba
@@ -130,7 +213,7 @@ def candado_de(chat_id):
 # --- Guardar que sesion de Claude corresponde a cada chat -------------------
 
 def inicializar_db():
-    """Crea las tres tablas si es la primera vez que arranca el bot."""
+    """Crea las cuatro tablas si es la primera vez que arranca el bot."""
     con = sqlite3.connect(DB)
 
     # La que ya existia: que conversacion de Claude le corresponde a cada persona.
@@ -158,6 +241,20 @@ def inicializar_db():
             tipo     TEXT NOT NULL,
             ts       TEXT NOT NULL,
             atendida TEXT
+        )
+    """)
+
+    # La huella de cada archivo que ya se recibio, para reconocer un reenvio.
+    # La huella es un numero que sale del contenido del archivo: el mismo
+    # archivo da siempre la misma huella, y de la huella no se puede volver al
+    # archivo. Guarda el chat de verdad, como `sesiones`, asi que esta tabla
+    # tampoco sale del servidor (ver `analisis/traer_datos.sh`).
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS archivos (
+            chat_id TEXT NOT NULL,
+            huella  TEXT NOT NULL,
+            ts      TEXT NOT NULL,
+            PRIMARY KEY (chat_id, huella)
         )
     """)
 
@@ -226,6 +323,36 @@ def registrar_documento(chat_id):
     )
     con.commit()
     con.close()
+
+
+def huella_de(ruta):
+    """Calcula la huella del archivo: un texto corto que sale de su contenido.
+
+    Se lee por pedazos para no cargar en memoria un PDF entero.
+    """
+    resumen = hashlib.sha256()
+    with open(ruta, "rb") as f:
+        for pedazo in iter(lambda: f.read(65536), b""):
+            resumen.update(pedazo)
+    return resumen.hexdigest()
+
+
+def archivo_repetido(chat_id, huella):
+    """Dice si esta persona ya habia mandado exactamente este mismo archivo.
+
+    Si no lo habia mandado, lo anota de una y devuelve False. Asi la pregunta y
+    el registro son una sola operacion y no se pueden desincronizar.
+    """
+    con = sqlite3.connect(DB)
+    ya_estaba = con.execute(
+        "SELECT 1 FROM archivos WHERE chat_id = ? AND huella = ?",
+        (str(chat_id), huella),
+    ).fetchone() is not None
+    if not ya_estaba:
+        con.execute("INSERT INTO archivos VALUES (?, ?, ?)", (str(chat_id), huella, ahora()))
+        con.commit()
+    con.close()
+    return ya_estaba
 
 
 def registrar_solicitud(chat_id, tipo):
@@ -461,15 +588,25 @@ def preguntarle_a_claude(chat_id, texto):
     # Los numeros de esta llamada. Vienen dentro del JSON que acaba de devolver
     # Claude: cuanto tardo en total, cuanto costo en dolares, cuantas vueltas
     # dio por dentro y cuantos tokens gasto.
+    #
+    # Los de entrada se guardan ademas separados en tres, porque no cuestan lo
+    # mismo: los frescos se pagan completos, los que se leen de cache valen una
+    # decima parte, y crear la cache cuesta un poco mas que un token fresco. Con
+    # el total solo, no se sabe si el gasto esta en el kit que se relee o en la
+    # conversacion en si, y se optimizaria a ciegas.
     uso = datos.get("usage") or {}
+    frescos = uso.get("input_tokens") or 0
+    de_cache = uso.get("cache_read_input_tokens") or 0
+    cache_creado = uso.get("cache_creation_input_tokens") or 0
     metricas = {
         "resultado": "ok",
         "latencia_ms": datos.get("duration_ms"),
         "costo_usd": datos.get("total_cost_usd"),
         "turnos_internos": datos.get("num_turns"),
-        "tokens_entrada": (uso.get("input_tokens") or 0)
-                          + (uso.get("cache_read_input_tokens") or 0)
-                          + (uso.get("cache_creation_input_tokens") or 0),
+        "tokens_entrada": frescos + de_cache + cache_creado,
+        "tokens_frescos": frescos,
+        "tokens_cache": de_cache,
+        "tokens_cache_creado": cache_creado,
         "tokens_salida": uso.get("output_tokens"),
     }
 
@@ -499,6 +636,19 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "Vi que ya me mandaste un archivo, pero no lo abri todavia: "
                 "queria que primero leyeras lo de arriba. Reenviamelo y sigo."
             )
+        return
+
+    # --- Los comandos los contesta el bot, nunca Claude ----------------------
+    # Va justo despues del candado del aviso, para que un /start de alguien que
+    # nunca ha escrito siga mostrando la bienvenida completa. De aqui en
+    # adelante, quien manda un comando ya la vio.
+    crudo = (mensaje.text or "").strip()
+    if crudo.startswith("/"):
+        comando = crudo.split()[0].split("@")[0].lower()
+        anotar(chat_id, "comando", comando)
+        # A quien ya conocemos, el /start no le repite el aviso de privacidad
+        # entero: lo unico que consigue es hacerle creer que se borro todo.
+        await mensaje.reply_text(TEXTO_START_CONOCIDO if comando == "/start" else TEXTO_COMANDO)
         return
 
     # --- Lo que todavia no se sabe atender -----------------------------------
@@ -531,17 +681,34 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # --- El archivo que manda la persona -------------------------------------
     tuvo_adjunto = bool(mensaje.document or mensaje.photo)
     if tuvo_adjunto:
-        # Llego su historia laboral y ya habia visto el aviso: este envio es
-        # la autorizacion, y queda con fecha y hora.
-        registrar_documento(chat_id)
-        anotar(chat_id, "documento_recibido")
-
         carpeta = carpeta_del_usuario(chat_id)
         archivo_tg = mensaje.document or mensaje.photo[-1]
         nombre = getattr(archivo_tg, "file_name", None) or f"{archivo_tg.file_unique_id}.jpg"
         destino = carpeta / nombre
         descargable = await context.bot.get_file(archivo_tg.file_id)
         await descargable.download_to_drive(str(destino))
+
+        # Si es exactamente el mismo archivo que ya mando antes, se le contesta
+        # aqui y no se llama a Claude. La gente reenvia porque no esta segura de
+        # que llego, y esa noche una sola persona reenvio ocho veces: siete
+        # llamadas al modelo para decir siete veces lo mismo con otras palabras.
+        #
+        # Va ANTES de anotar el documento: si no, cada reenvio contaria como un
+        # documento recibido mas y el embudo del reporte diria que llegaron mas
+        # documentos de los que llegaron.
+        if archivo_repetido(chat_id, huella_de(destino)):
+            anotar(chat_id, "archivo_repetido")
+            await mensaje.reply_text(
+                "Ese archivo ya lo tengo, no hace falta que lo reenvíes. "
+                "Estoy trabajando con él."
+            )
+            return
+
+        # Llego su historia laboral y ya habia visto el aviso: este envio es
+        # la autorizacion, y queda con fecha y hora.
+        registrar_documento(chat_id)
+        anotar(chat_id, "documento_recibido")
+
         texto = (mensaje.caption or "") + f"\n\n[El usuario adjuntó un archivo: {destino}]"
     else:
         texto = mensaje.text or ""
@@ -552,10 +719,20 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Acuse inmediato: la regla de producto prohibe el silencio mientras se procesa.
     # Si en este momento no hay cupo libre, se le dice, en vez de dejarlo
     # pensando que el bot se colgo. La gente aguanta la espera si sabe que la hay.
+    #
+    # El acuse largo, con tiempo estimado, solo va cuando viene un archivo: ese
+    # es el caso lento de verdad (el peor medido fue de 320 segundos). Para un
+    # mensaje de texto, que tarda 9 segundos tipicos, anunciarle "dos o tres
+    # minutos" seria peor que no decir nada.
     if CUPOS.locked():
         await mensaje.reply_text(
             "Recibido. Estoy atendiendo a alguien más en este momento, "
             "así que me voy a demorar un poco más de lo normal. No te vayas."
+        )
+    elif tuvo_adjunto:
+        await mensaje.reply_text(
+            "Recibí tu documento. Leerlo y hacer las cuentas me toma dos o tres "
+            "minutos, a veces un poco más. No te vayas y no lo reenvíes, ya lo tengo."
         )
     else:
         await mensaje.reply_text("Recibido. Dame un momento.")
@@ -599,6 +776,15 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if sesion:
         guardar_sesion(chat_id, sesion)
 
+    # Ultima revision antes de mandar: si lo que salio es un mensaje del CLI y
+    # no de Júbilo, no se manda. Queda anotado para verlo en el reporte, porque
+    # cada una de estas es una grieta que hay que ir a tapar.
+    if parece_fuga_del_cli(respuesta):
+        log.error("fuga del CLI interceptada para %s: %s", chat_id, respuesta[:200])
+        anotar(chat_id, "fuga_cli", respuesta[:200])
+        await mensaje.reply_text(TEXTO_FUGA)
+        return
+
     # Telegram corta en 4096 caracteres: partimos si hace falta.
     for i in range(0, len(respuesta), 4000):
         await mensaje.reply_text(respuesta[i:i + 4000])
@@ -623,6 +809,9 @@ def anotar_turno_del_mensaje(chat_id, texto, respuesta, tuvo_adjunto, espera_col
             latencia_ms=metricas.get("latencia_ms"),
             costo_usd=metricas.get("costo_usd"),
             tokens_entrada=metricas.get("tokens_entrada"),
+            tokens_frescos=metricas.get("tokens_frescos"),
+            tokens_cache=metricas.get("tokens_cache"),
+            tokens_cache_creado=metricas.get("tokens_cache_creado"),
             tokens_salida=metricas.get("tokens_salida"),
             turnos_internos=metricas.get("turnos_internos"),
         )

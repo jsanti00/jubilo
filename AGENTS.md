@@ -1,6 +1,6 @@
 # AGENTS.md: repo de Júbilo
 
-> **Última actualización:** 2026-09-16. El bot está desplegado en producción y se comparte con los primeros usuarios de prueba.
+> **Última actualización:** 2026-09-18. Cambio: se ejecutaron las mejoras del primer feedback real (`analisis/mejoras-por-hacer.md`). Lo nuevo: la carpeta `tramites/`, la prueba `bot/probar_bot.py`, la convergencia de multifondos en la calculadora, y el aviso de privacidad en versión 1.2. **Nada de eso está desplegado todavía.** Antes: 2026-09-16, el bot se desplegó en producción y se compartió con los primeros usuarios de prueba.
 
 Júbilo es un asesor pensional para Colombia en Telegram: **la IA conversa y el código fijo hace los números.** Ninguna cifra la calcula el modelo.
 
@@ -14,7 +14,8 @@ Este archivo orienta a cualquier LLM que trabaje en este repo. Léelo antes de a
 |---|---|---|
 | `calculadora/` | Los números: RPM, RAIS, lagunas, recuperación, costo y retorno. Python puro, sin IA. Cada módulo tiene su `probar_*.py` | Claude la ejecuta, no la reescribe en caliente |
 | `kit-contexto/` | Lo que Júbilo sabe y cómo habla. Incluye `system-prompt.md` y `bienvenida-y-aviso.txt` | Claude lo lee en cada conversación |
-| `bot/` | El despliegue: `bot.py` (el cartero entre Telegram y Claude), `registro.py` (la bitácora), `jubilo.service` y `deploy_jubilo.sh` | Corre en el VPS, no en el Mac |
+| `bot/` | El despliegue: `bot.py` (el cartero entre Telegram y Claude), `registro.py` (la bitácora), `jubilo.service` y `deploy_jubilo.sh`. Sus dos pruebas, `probar_registro.py` y `probar_bot.py`, corren en el Mac sin servidor | Corre en el VPS, no en el Mac |
+| `tramites/` | **Lo único del repo que toca internet.** Hoy solo `pedir_historia.py`, que le pide a Colpensiones que le mande la historia laboral al correo de la persona. Vive aparte a propósito: el cerebro del agente sigue sin internet y solo ejecuta esto como una herramienta determinista, igual que la calculadora | Claude lo ejecuta, con `--allowedTools` |
 | `analisis/` | El ciclo de feedback: `traer_datos.sh` baja la bitácora del servidor y `reporte.py` la vuelve un `.md` legible. La carpeta `datos/` está en el `.gitignore` | Se corre en el Mac después de que la gente use el bot |
 | `casos/`, `cobertura/`, `verificacion/` | Casos de prueba y control de cobertura | Validación |
 | `cumplimiento/` | Ley 1581 y tratamiento de datos | Marco legal |
@@ -52,7 +53,7 @@ Si alguien pide que le borren lo suyo, `registro.borrar_persona(DB, seudonimo)` 
 
 **Nunca pruebes un cambio mandándolo al bot de Telegram de producción.** Hay tres niveles y con esos basta:
 
-**Nivel 1, la calculadora: las pruebas automáticas.** Todo cambio en `calculadora/` se valida corriendo las diez suites. Tarda segundos y no toca el servidor:
+**Nivel 1, la calculadora: las pruebas automáticas.** Todo cambio en `calculadora/` se valida corriendo las once suites. Tarda segundos y no toca el servidor:
 
 ```bash
 cd calculadora
@@ -61,10 +62,19 @@ for f in probar_*.py; do printf '%-32s ' $f; python3 -B $f >/tmp/out.txt 2>&1 &&
 
 Todas deben terminar en verde. Si tocas la lógica de un módulo y su prueba no cubre el caso nuevo, **añade el caso a la prueba** antes de dar el cambio por bueno.
 
-**Nivel 1b, la bitácora.** Todo cambio en `bot/registro.py` se valida con su propia prueba, que no necesita servidor ni internet:
+**Nivel 1b, la bitácora y el bot.** Todo cambio en `bot/registro.py` o en `bot/bot.py` se valida con sus dos pruebas, que no necesitan servidor ni internet:
 
 ```bash
 python3 -B bot/probar_registro.py
+python3 -B bot/probar_bot.py
+```
+
+La segunda cubre las tres defensas que se añadieron el 2026-09-18: el filtro que impide que un mensaje del CLI llegue al chat de una persona, la huella que reconoce un documento reenviado, y la memoria de archivos ya vistos. Para poder probarlas en el Mac, `bot.py` se puede importar sin que exista `/srv/jubilo`: sus dos efectos de arranque que tocan el disco van dentro de un `try`.
+
+**Nivel 1c, el trámite.** `tramites/probar_pedir_historia.py` comprueba que leamos bien las respuestas del portal de Colpensiones, y **no toca internet**: trabaja sobre las respuestas reales guardadas del 2026-09-18.
+
+```bash
+python3 -B tramites/probar_pedir_historia.py
 ```
 
 La mitad de sus comprobaciones verifican lo contrario de lo normal: que la cédula, el correo y el nombre **no** lleguen a la base, y que los salarios, las semanas y los años **sí** lleguen. Un filtro que tacha de más deja el reporte inservible. `deploy_jubilo.sh` corre esta prueba solo y se detiene si falla.

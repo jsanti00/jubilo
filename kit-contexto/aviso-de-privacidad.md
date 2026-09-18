@@ -1,8 +1,8 @@
 # Aviso de privacidad del piloto - Documento 23 del kit
 
-> **Última actualización:** 2026-09-16. **Estado:** borrador de producto, pendiente de revisión de abogado de protección de datos.
+> **Última actualización:** 2026-09-18. **Estado:** borrador de producto, pendiente de revisión de abogado de protección de datos.
 > **Qué es esto:** el texto exacto que el agente le muestra al usuario **antes** de pedirle la historia laboral. No es la política de tratamiento completa: es el aviso de privacidad, que es el formato que la ley permite cuando no se puede poner la política entera a disposición del titular. *Fuente: Decreto 1377 de 2013, arts. 14 y 15.*
-> **De dónde salen las decisiones:** `datos-y-alcance.md`, secciones 7, 8, 9 y 12, cerradas por Santiago el 2026-07-27. El cambio a versión 1.1 (aviso dentro de la bienvenida, texto de 330 a 150 palabras) lo cerró Santiago el 2026-09-16.
+> **De dónde salen las decisiones:** `datos-y-alcance.md`, secciones 7, 8, 9 y 12, cerradas por Santiago el 2026-07-27. El cambio a versión 1.1 (aviso dentro de la bienvenida, texto de 330 a 150 palabras) lo cerró Santiago el 2026-09-16. El cambio a versión 1.2 (la cédula pasa a ser un dato transmitido a Colpensiones, más la pregunta del fondo y qué no es la historia laboral) lo cerró Santiago el 2026-09-18.
 > **Documentos hermanos:** el manual interno y el procedimiento ante incidentes están en `../cumplimiento/`. Este es el único de los tres que ve el usuario.
 
 ---
@@ -23,11 +23,35 @@ Reglas de uso para el agente:
 
 ## 2. El texto
 
-La versión vigente es la **1.1**. La 1.0 queda archivada abajo, no se borra: el manual interno exige (su sección 3.1) poder reconstruir qué versión vio cada usuario.
+La versión vigente es la **1.2**. La 1.1 y la 1.0 quedan archivadas abajo, no se borran: el manual interno exige (su sección 3.1) poder reconstruir qué versión vio cada usuario.
 
-### 2.1 Versión 1.1 (vigente desde el 2026-09-16)
+### 2.1 Versión 1.2 (vigente desde el 2026-09-18)
 
-Es el mensaje de bienvenida completo, con el aviso incorporado. Este es el texto literal que ve el usuario, en bloque de código para que se copie sin alteraciones:
+Es el mensaje de bienvenida completo, con el aviso incorporado. Este es el texto literal que ve el usuario, en bloque de código para que se copie sin alteraciones. Vive en `bienvenida-y-aviso.txt`, que es el archivo que lee el bot:
+
+```
+Hola 👋 Soy Júbilo. Te digo cuándo y con qué monto te vas a pensionar, y cómo mejorar tu resultado.
+
+Para eso necesito tu historia laboral: el reporte que dice cuántas semanas llevas cotizadas en toda tu vida, empleador por empleador. No es el saldo de tu cuenta, ni el certificado laboral que da tu empresa, ni el extracto de cesantías.
+
+¿En qué fondo estás: Colpensiones, Protección, Porvenir, Colfondos o Skandia? Con eso te digo cómo descargarla, paso a paso. Si estás en Colpensiones, te la puedo pedir yo.
+
+Antes de que la mandes, lo mínimo sobre tus datos. Detrás de esto hay una persona, no una empresa: Jose Santiago Sierra Garcia (bot.jubilo@gmail.com). Con tu historia laboral hago dos cosas: calculo tu diagnóstico y guardo la conversación sin tu nombre ni tu cédula para mejorar el producto. No la vendo ni se la mando a nadie. El archivo original lo borro apenas saco los números, y el procesamiento ocurre en servidores fuera de Colombia. Si me pides que le pida tu historia laboral a Colpensiones, uso tu cédula únicamente para ese trámite, ante ellos, y no la guardo. Si tu historia trae incapacidades, invalidez o sindicatos, esos son datos sensibles y no estás obligado a dármelos: táchalos y te hago el diagnóstico igual.
+
+Escríbeme "mis datos" para ver, corregir o borrar lo tuyo, o quitarme el permiso de usarlo. Si quieres el detalle completo, escríbeme "política de datos". Al mandarme tu historia laboral aceptas esto.
+```
+
+**Qué cambió del 1.1 al 1.2, y por qué.** Tres cosas, y solo una es legal:
+
+1. **La cédula pasa a ser un dato transmitido a un tercero** (frase nueva: "uso tu cédula únicamente para ese trámite, ante ellos, y no la guardo"). Hasta el 1.1, la cédula era solo una llave para abrir el PDF y nunca salía del servidor. Con el trámite automatizado ante Colpensiones (ver `tramites/pedir_historia.py`), la cédula se transmite a Colpensiones en nombre de la persona. Eso es un tratamiento nuevo y una finalidad nueva, así que tiene que estar en el aviso. *Fuente: Decreto 1377 de 2013, art. 15 num. 2.*
+2. **Se dice qué es y qué no es la historia laboral.** No es un requisito legal: es producto. Dos de las cinco primeras personas nunca mandaron el documento, y una mandó el pantallazo del saldo de su fondo creyendo que era eso.
+3. **Se pregunta el fondo en la bienvenida.** Tampoco es legal. Antes se preguntaba solo después de que la persona decía que no sabía descargarlo, y eso gastaba un turno completo en tres de cada cinco conversaciones.
+
+**El permiso puntual del trámite sigue siendo obligatorio.** Que esté en el aviso no autoriza a hacer el trámite por iniciativa propia: Júbilo solo lo hace si la persona lo pide o acepta cuando se lo ofrece, y le dice antes a qué correo va a llegar. El aviso informa el tratamiento; el permiso puntual lo dispara.
+
+### 2.2 Versión 1.1 (histórica, dejó de usarse el 2026-09-18)
+
+Estuvo vigente del 2026-09-16 al 2026-09-18. Se conserva para poder reconstruir qué vio cada usuario de ese periodo. **No se muestra a nadie más.**
 
 ```
 Hola 👋 Soy Júbilo. Te digo cuándo y con qué monto te vas a pensionar, y cómo mejorar tu resultado.
@@ -39,7 +63,7 @@ Antes de que la mandes, lo mínimo sobre tus datos. Detrás de esto hay una pers
 Escríbeme "mis datos" para ver, corregir o borrar lo tuyo, o quitarme el permiso de usarlo. Si quieres el detalle completo, escríbeme "política de datos". Al mandarme tu historia laboral aceptas esto.
 ```
 
-### 2.2 Versión 1.0 (histórica, dejó de usarse el 2026-09-16)
+### 2.3 Versión 1.0 (histórica, dejó de usarse el 2026-09-16)
 
 Estuvo vigente del 2026-07-27 al 2026-09-16. Se mostraba como un turno aparte, inmediatamente antes de pedir el documento. Se conserva para poder reconstruir qué vio cada usuario que interactuó en ese periodo. **No se muestra a nadie más.**
 
@@ -67,7 +91,7 @@ Estuvo vigente del 2026-07-27 al 2026-09-16. Se mostraba como un turno aparte, i
 
 ## 3. Cómo cubre cada requisito legal
 
-Tabla de trazabilidad de la **versión 1.1**, para que el abogado la revise punto por punto. Como el texto 1.1 no tiene párrafos con título, cada fila apunta a la frase concreta.
+Tabla de trazabilidad de la **versión 1.2**, para que el abogado la revise punto por punto. Como el texto no tiene párrafos con título, cada fila apunta a la frase concreta.
 
 | Requisito | Fuente | Dónde queda cubierto |
 |---|---|---|
@@ -80,6 +104,7 @@ Tabla de trazabilidad de la **versión 1.1**, para que el abogado la revise punt
 | Carácter previo de la autorización | Ley 1581, art. 9; Decreto 1377, art. 5 | Sección 1 de este documento: el aviso va dentro del mensaje de bienvenida, que es anterior a cualquier envío del documento |
 | Conducta inequívoca como forma válida de autorización | Decreto 1377, art. 7 | "Al mandarme tu historia laboral aceptas esto", que nombra el acto concreto que constituye la autorización |
 | Autorización para transferencia internacional | Ley 1581, art. 26 lit. f | "el procesamiento ocurre en servidores fuera de Colombia" |
+| Transmisión de la cédula a un tercero (Colpensiones) para hacer el trámite en nombre del titular | Decreto 1377, art. 15 num. 2; Ley 1581, art. 8 lit. a | "uso tu cédula únicamente para ese trámite, ante ellos, y no la guardo". **Nuevo en la 1.2.** Es la finalidad que no existía en el 1.1, cuando la cédula solo abría el PDF y no salía del servidor. Pendiente de revisión del abogado: si esta frase basta, o si el trámite exige además una autorización aparte en el momento de hacerlo |
 | Términos de respuesta a consultas y reclamos | Ley 1581, arts. 14 y 15 | Ya **no** está en el aviso corto: se cubre en la política de tratamiento en versión de usuario, accesible con el comando "política de datos" |
 | Derecho a quejarse ante la SIC | Ley 1581, art. 8 lit. d | Ya **no** está en el aviso corto: se cubre en la política de tratamiento en versión de usuario, accesible con el comando "política de datos" |
 | Política de conservación atada a la finalidad | Decreto 1377, art. 11 | El 1.1 dice "El archivo original lo borro apenas saco los números". La conservación de los números atada a la finalidad y el borrado el mismo día **se cubren en la política de tratamiento en versión de usuario**, accesible con "política de datos". **Decisión de Santiago, 2026-09-16:** no vuelven al aviso corto, porque el art. 15 no los lista entre los cuatro contenidos mínimos y porque anunciar el borrado el mismo día antes de automatizarlo sube una promesa que hoy se cumple a mano |

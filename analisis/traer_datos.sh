@@ -23,14 +23,15 @@ mkdir -p "$CARPETA"
 echo "1/3 Sacando una copia limpia de la base en el servidor..."
 ssh "$SERVIDOR" "sqlite3 /srv/jubilo/estado.db \".backup '/tmp/jubilo-copia.db'\""
 
-# Antes de que salga del servidor, se le quitan a la copia las tres tablas que
-# guardan el chat de Telegram de verdad (sesiones, autorizaciones, solicitudes).
+# Antes de que salga del servidor, se le quitan a la copia las cuatro tablas que
+# guardan el chat de Telegram de verdad (sesiones, autorizaciones, solicitudes
+# y archivos, que lleva la huella de cada documento recibido).
 # Esas se quedan alla, que es donde tienen que estar por ley. A tu Mac solo
 # viaja la bitacora, que ya viene con seudonimos y sin nombres ni cedulas.
 # El VACUUM al final reescribe el archivo, para que lo borrado no quede
 # escondido en el espacio libre de la base.
 echo "1b/3 Quitandole a la copia los datos que identifican a la gente..."
-ssh "$SERVIDOR" "sqlite3 /tmp/jubilo-copia.db \"DELETE FROM sesiones; DELETE FROM autorizaciones; DELETE FROM solicitudes; VACUUM;\""
+ssh "$SERVIDOR" "sqlite3 /tmp/jubilo-copia.db \"DELETE FROM sesiones; DELETE FROM autorizaciones; DELETE FROM solicitudes; DROP TABLE IF EXISTS archivos; VACUUM;\""
 
 echo "2/3 Trayendola a tu Mac..."
 scp "$SERVIDOR:/tmp/jubilo-copia.db" "$LOCAL"
