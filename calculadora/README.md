@@ -350,23 +350,29 @@ Convive con el dato observado de la sección anterior y no lo reemplaza. Son **d
 
 | Paso | Qué aporta | Valor | Fuente y confianza |
 |---|---|---|---|
-| 1. Ancla | Punto de partida del conservador | 2,61% | Dato observado colombiano (SFC). Es el perfil donde una ventana de 13 años distorsiona menos, porque su cartera es sobre todo renta fija. **Confianza MEDIA** |
+| 1. Ancla | Punto de partida del conservador | 2,02% | Dato observado colombiano (SFC). Es el perfil donde una ventana de 13 años distorsiona menos, porque su cartera es sobre todo renta fija. **Confianza MEDIA** |
 | 2. Prima de renta variable | Cuánto paga el riesgo a largo plazo | 3,5 puntos reales | Dimson, Marsh y Staunton, Global Investment Returns Yearbook 2025 (London Business School, Cambridge Judge y UBS): serie mundial 1900-2024, renta variable 5,2% real contra bonos 1,7% real. **Confianza MEDIA**, resumen público. **Supuesto importado de otro mercado** |
-| 3. Exposición adicional a renta variable | Convierte la prima en puntos | Conservador 20%, moderado 45%, mayor riesgo 70% | **[VERIFICAR]**, ver abajo |
+| 3. Exposición adicional a renta variable | Convierte la prima en puntos | Punto medio de la banda legal de cada fondo: conservador 10%, moderado 32,5%, mayor riesgo 57,5% | **Verificado el 2026-09-19** en el Decreto 2555 de 2010, art. 2.6.12.1.4. **Confianza ALTA**, ver abajo |
 
 **Fórmula, y está en el código para que se pueda recalcular sola:** al ancla del conservador se le suma la exposición **adicional** a renta variable de cada perfil respecto de él, multiplicada por la prima.
 
-| Perfil | Cálculo | Prospectivo | Observado central |
-|---|---|---|---|
-| Conservador | 2,61% + (20% - 20%) x 3,5 | **2,61%** | 2,61% |
-| Moderado | 2,61% + (45% - 20%) x 3,5 | **3,49%** | 2,56% |
-| Mayor riesgo | 2,61% + (70% - 20%) x 3,5 | **4,36%** | 3,56% |
+| Perfil | Banda legal de renta variable | Cálculo | Prospectivo | Observado central |
+|---|---|---|---|---|
+| Conservador | 0% a 20% | 2,02% + (10% - 10%) x 3,5 | **2,02%** | 2,02% |
+| Moderado | 20% a 45% | 2,02% + (32,5% - 10%) x 3,5 | **2,81%** | 2,76% |
+| Mayor riesgo | 45% a 70% | 2,02% + (57,5% - 10%) x 3,5 | **3,68%** | 3,72% |
 
-### El eslabón débil, declarado
+### El eslabón que era débil, ya verificado (2026-09-19)
 
-**[VERIFICAR] los límites de exposición a renta variable por perfil no se verificaron en fuente primaria.** El 2026-07-28 el Gestor Normativo no entregó el articulado del Decreto 2555 y el documento técnico de la URF es un PDF del que no se puede extraer texto. Los porcentajes usados son los que se citan habitualmente para el régimen de inversiones de los multifondos.
+**Los límites de renta variable por tipo de fondo se leyeron en fuente primaria:** Decreto 2555 de 2010, artículo 2.6.12.1.4 (sustituido por el Decreto 857 de 2011). Las citas textuales están en `fuentes-datos/multifondos-limites-renta-variable.md`.
 
-**Qué cambiaría si se verifican:** los tres números prospectivos se recalculan solos, porque la fórmula está escrita. Si el límite del moderado resultara más bajo, su prima baja y se acerca al conservador.
+**Lo que cambió, y es lo importante: no es un techo suelto por fondo, es una banda encadenada.** El numeral 1 fija los máximos (20 / 45 / 70) y el numeral 2 fija los mínimos: el mínimo de cada fondo no puede ser inferior al máximo del fondo anterior. Las bandas reales son conservador 0% a 20%, moderado 20% a 45% y mayor riesgo 45% a 70%.
+
+**Qué se corrigió en el modelo.** Hasta el 2026-09-19 cada perfil entraba a la fórmula con su **techo**, o sea suponiendo que cada fondo usa su límite completo, cosa que ningún fondo hace: el propio código lo declaraba como el borde optimista de la construcción. Ahora entra con el **punto medio** de su banda, que es el supuesto neutral. El conservador no se movió (es el ancla); el moderado bajó de 2,895% a 2,8075% real y el mayor riesgo de 3,77% a 3,6825%.
+
+**Efecto lateral que vale la pena mirar:** el supuesto quedó todavía más pegado a la evidencia. La brecha contra el observado de la SFC pasó de 0,14 a 0,05 puntos en el moderado, y de 0,05 a 0,04 en el mayor riesgo.
+
+**Lo que este rango NO autoriza.** La banda acota el rendimiento **esperado** de largo plazo que implica la mezcla del fondo, no el **realizado**. Un fondo moderado que cumple la ley puede rendir en un periodo por debajo del piso de su banda, y de hecho pasó (la SFC midió moderados en 2,27% real). Por eso la banda legal no se usa para recortar la dispersión observada entre administradoras.
 
 **Supuesto adicional, declarado:** se asume que cada fondo usa su límite completo. Ninguno lo hace, así que estos números son el **borde optimista** de la construcción.
 
@@ -392,3 +398,85 @@ Escenario moderado, fecha 2026-07-18. El "antes" es con el rendimiento observado
 ### Regresión
 
 Fija que las dos constantes existen y son distintas, que el prospectivo es monótono creciente, que **el observado no lo es y sigue sin estarlo** (la prueba que impide maquillar la evidencia), que el conservador prospectivo es exactamente el observado, que la fórmula reproduce los tres números, que la prima cita su fuente y declara que se importa de otro mercado, que la salida declara la contradicción y marca el eslabón sin verificar, y que la dispersión entre AFP sigue siendo la de la SFC mientras el nivel es el prospectivo.
+
+---
+
+## Extracción automática de documentos (añadido el 2026-09-19)
+
+**Qué resuelve.** Hasta ahora la historia laboral la leía el modelo, mirando el
+documento y escribiendo el JSON a mano. Eso tarda cerca de **90 segundos** por
+documento. Cuando el documento viene de una plantilla que ya conocemos, un
+programa hace lo mismo en **menos de 0,3 segundos**, y copia en vez de leer, así
+que no puede equivocarse de cifra.
+
+**Cuatro archivos, uno por responsabilidad:**
+
+| Archivo | Qué hace |
+|---|---|
+| `extraccion_texto.py` | Saca el texto del PDF conservando las columnas (`pdftotext -layout`, y si no está instalado, `pypdf`) |
+| `detectar_formato.py` | Mira el texto y dice de qué administradora es. Ante la duda, dice que no sabe |
+| `parsers_historia.py` | Un parser por plantilla. Convierte la tabla al esquema de `casos/esquema-datos.md` |
+| `extraer.py` | El que se llama desde afuera: junta los tres y decide si el atajo sirve o hay que leer el documento con el modelo |
+
+**Uso:**
+
+```bash
+python3 /srv/jubilo/jubilo/calculadora/extraer.py /ruta/del/documento.pdf --salida /ruta/extracciones/2026-07-21-porvenir.json
+```
+
+Devuelve un JSON con el estado. Tres respuestas posibles:
+
+- `extraido`: la tabla se leyó y **cuadra contra el total impreso** del
+  documento. El JSON ya está escrito y se puede pasar a `diagnosticar.py`.
+- `extraido_parcial`: es un extracto de cuenta, no una historia laboral. Sirve
+  para el saldo y el total de semanas, no para el detalle de periodos.
+- `fallback`: hay que leerlo como siempre, con el modelo. El campo `motivo`
+  dice por qué (`sin_capa_de_texto`, `formato_desconocido`, `tabla_ilegible`,
+  `no_cuadra_con_el_total_impreso`, ...).
+
+**La regla que manda: esto nunca falla duro.** Cualquier sorpresa termina en
+`fallback`. El camino viejo sigue completo y este es solo un atajo.
+
+### Formatos que se leen hoy
+
+| Formato | Muestras reales | Estado |
+|---|---|---|
+| `colpensiones_reporte_semanas` | 3 | Leído |
+| `colfondos_reporte_historia` | 1 | Leído |
+| `porvenir_historia_laboral` | 1 | Leído |
+| `historia_laboral_consolidada` (Skandia) | 1 | Leído |
+| `proteccion_extracto_trimestral` | 1 | Leído, pero es un extracto, no una historia laboral |
+| `proteccion_historia_laboral` | 1, **sin capa de texto** | Se identifica y se manda al modelo |
+
+Al final de `parsers_historia.py` está escrito, formato por formato, qué parte
+es estructura estable de la plantilla y qué parte podría romperse con otro
+documento de la misma administradora. Con una sola muestra por fondo, esa nota
+es lo primero que hay que mirar cuando llegue la segunda.
+
+### Cómo se prueba
+
+```bash
+python3 -B calculadora/probar_extraer.py                      # detector y fallback
+JUBILO_MUESTRAS="/ruta/a/las/muestras" python3 -B calculadora/probar_extraer.py   # además, contra los documentos reales
+```
+
+La segunda forma corre los parsers sobre los PDF de verdad y compara el
+resultado **campo a campo contra el set dorado de `casos/`**, que es la
+extracción que hoy produce el modelo. Las muestras no viven en el repositorio
+(son documentos de personas) y por eso la ruta se pasa por variable de entorno:
+sin ella la prueba se salta ese nivel y lo dice.
+
+### Conectado a la conversación (2026-09-19)
+
+Ya está enganchado: el **momento 2 del `system-prompt.md`** arranca corriendo
+`extraer.py` con `--salida` sobre la carpeta `extracciones/` de la persona. Si
+el estado es `extraido`, el agente se salta los pasos de lectura, extracción y
+guardado, y pasa directo al orquestador con ese mismo archivo. Con
+`extraido_parcial` o `fallback` sigue el camino de siempre, leyendo el documento
+él mismo.
+
+Los cuatro motivos de `fallback` están escritos uno por uno en ese paso (PDF sin
+capa de texto, plantilla desconocida, plantilla conocida sin filas legibles y
+lectura que no cuadra contra el total impreso), con la regla que los cubre a
+todos, incluidos los que no están en la lista: si el estado no es `extraido`, el
+agente lee el documento. Nunca se queda sin salida.
