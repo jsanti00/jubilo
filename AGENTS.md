@@ -1,6 +1,6 @@
 # AGENTS.md: repo de Júbilo
 
-> **Última actualización:** 2026-09-18. Cambio: se ejecutaron las mejoras del primer feedback real (`analisis/mejoras-por-hacer.md`). Lo nuevo: la carpeta `tramites/`, la prueba `bot/probar_bot.py`, la convergencia de multifondos en la calculadora, y el aviso de privacidad en versión 1.2. **Nada de eso está desplegado todavía.** Antes: 2026-09-16, el bot se desplegó en producción y se compartió con los primeros usuarios de prueba.
+> **Última actualización:** 2026-09-19. Cambio: se construyó el **banco de palancas** (`analisis/palancas-por-construir.md`). Lo nuevo: `calculadora/palancas.py` (elige, cuantifica, ordena y combina las palancas de cada persona), `calculadora/anomalias.py` (detecta lo que hay que verificar en la historia laboral), el parámetro `meses_aplazamiento` en `rpm.py` y `rais.py`, la tabla de rendimiento por AFP y fondo en `datos_sistema.py`, y las secciones 4 y 5 del reporte conectadas a todo eso. **Nada de eso está desplegado todavía.** Antes: 2026-09-18, se ejecutaron las mejoras del primer feedback real: la carpeta `tramites/`, la prueba `bot/probar_bot.py`, la convergencia de multifondos y el aviso de privacidad en versión 1.2. Antes: 2026-09-16, el bot se desplegó en producción y se compartió con los primeros usuarios de prueba.
 
 Júbilo es un asesor pensional para Colombia en Telegram: **la IA conversa y el código fijo hace los números.** Ninguna cifra la calcula el modelo.
 
@@ -12,10 +12,10 @@ Este archivo orienta a cualquier LLM que trabaje en este repo. Léelo antes de a
 
 | Carpeta | Qué es | Quién lo usa |
 |---|---|---|
-| `calculadora/` | Los números: RPM, RAIS, lagunas, recuperación, costo y retorno. Python puro, sin IA. Cada módulo tiene su `probar_*.py` | Claude la ejecuta, no la reescribe en caliente |
+| `calculadora/` | Los números: RPM, RAIS, lagunas, recuperación, costo y retorno, y el **banco de palancas**. Python puro, sin IA. Cada módulo tiene su `probar_*.py` | Claude la ejecuta, no la reescribe en caliente |
 | `kit-contexto/` | Lo que Júbilo sabe y cómo habla. Incluye `system-prompt.md` y `bienvenida-y-aviso.txt` | Claude lo lee en cada conversación |
 | `bot/` | El despliegue: `bot.py` (el cartero entre Telegram y Claude), `registro.py` (la bitácora), `jubilo.service` y `deploy_jubilo.sh`. Sus dos pruebas, `probar_registro.py` y `probar_bot.py`, corren en el Mac sin servidor | Corre en el VPS, no en el Mac |
-| `tramites/` | **Lo único del repo que toca internet.** Hoy solo `pedir_historia.py`, que le pide a Colpensiones que le mande la historia laboral al correo de la persona. Vive aparte a propósito: el cerebro del agente sigue sin internet y solo ejecuta esto como una herramienta determinista, igual que la calculadora | Claude lo ejecuta, con `--allowedTools` |
+| `tramites/` | **Lo único del repo que toca internet EN CONVERSACIÓN**, o sea lo único que Júbilo puede ejecutar mientras atiende a alguien. (El otro que descarga es `analisis/rendimiento_afp.py`, pero lo corre Santiago a mano en el Mac para refrescar una tabla de datos, nunca el agente.) Hoy solo `pedir_historia.py`, que le pide a Colpensiones que le mande la historia laboral al correo de la persona. Vive aparte a propósito: el cerebro del agente sigue sin internet y solo ejecuta esto como una herramienta determinista, igual que la calculadora | Claude lo ejecuta, con `--allowedTools` |
 | `analisis/` | El ciclo de feedback: `traer_datos.sh` baja la bitácora del servidor y `reporte.py` la vuelve un `.md` legible. La carpeta `datos/` está en el `.gitignore` | Se corre en el Mac después de que la gente use el bot |
 | `casos/`, `cobertura/`, `verificacion/` | Casos de prueba y control de cobertura | Validación |
 | `cumplimiento/` | Ley 1581 y tratamiento de datos | Marco legal |
@@ -53,7 +53,7 @@ Si alguien pide que le borren lo suyo, `registro.borrar_persona(DB, seudonimo)` 
 
 **Nunca pruebes un cambio mandándolo al bot de Telegram de producción.** Hay tres niveles y con esos basta:
 
-**Nivel 1, la calculadora: las pruebas automáticas.** Todo cambio en `calculadora/` se valida corriendo las once suites. Tarda segundos y no toca el servidor:
+**Nivel 1, la calculadora: las pruebas automáticas.** Todo cambio en `calculadora/` se valida corriendo las **trece** suites (eran once hasta el 2026-09-19; se sumaron `probar_palancas.py` y `probar_anomalias.py`). Tarda segundos y no toca el servidor:
 
 ```bash
 cd calculadora
@@ -117,6 +117,22 @@ En ambos casos el bot queda caído unos 6 segundos. Si el proceso muere, systemd
 - Hay que rehacer `/login` en el servidor cada ~11 días. Cuando se vence, el bot avisa por Telegram y le responde a todos que no tiene capacidad.
 
 ---
+
+## 5 bis. El banco de palancas (añadido el 2026-09-19)
+
+`calculadora/palancas.py` es el **director de orquesta**: los motores de cálculo ya existían y nadie los llamaba para responder la única pregunta que le importa a la persona, que es "¿y yo qué puedo hacer?". Este módulo elige qué palancas le aplican, las cuantifica corriendo la calculadora, las ordena por impacto y arma los escenarios. Su entrada es `palancas.calcular(caso, regimen, sexo, edad, fecha_calculo, datos)`.
+
+**Lo consumen dos sitios y ninguno redacta nada por su cuenta:** el reporte (`reporte/armar_reporte.py`, secciones 4 y 5) y el agente en conversación (ver la sección "Las palancas salen de `palancas.py`" del `system-prompt.md`).
+
+Cinco reglas que este módulo impone y que no se pueden romper al tocarlo:
+
+- **El número nunca se estima.** Cada palanca se cuantifica volviendo a correr la calculadora con el supuesto movido.
+- **Una palanca puede salir negativa, y entonces no se ofrece.** En el RPM, aplazar la pensión BAJA la mesada cuando la tasa ya está en su tope y el IBL que manda es el de toda la vida (Ley 100 art. 21).
+- **El traslado de régimen no entra al ranking por impacto.** Viaja en su propia llave. Ordenarlo por impacto equivale a recomendarlo, y el traslado exige por ley doble asesoría.
+- **La palanca de administradora va siempre debajo de la de portafolio.** El portafolio pesa entre dos y diez veces más; presentarlas iguales invita a optimizar la pequeña.
+- **Si la persona queda en la garantía de pensión mínima, ninguna palanca le mueve la mesada.** El módulo levanta `aviso_de_segmento` y eso manda sobre todo lo demás: para ella lo que está en juego no es cuánto recibe, es calificar.
+
+`calculadora/anomalias.py` es su compañero: revisa la historia laboral y marca lo que hay que verificar (siete tipos, cada uno con su nivel de confianza). **Nunca afirma que hay un error**, porque un falso positivo aquí destruye la confianza: dice qué ir a preguntarle a la administradora.
 
 ## 6. Reglas al tocar el código
 
