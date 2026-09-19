@@ -1,4 +1,4 @@
-"""Un escritor de PDF de una sola pagina, sin librerias de terceros.
+"""Un escritor de PDF sencillo, sin librerias de terceros.
 
 **Por que esto y no una libreria.** El servidor de Júbilo no tiene ninguna
 libreria de PDF instalada (se comprobo el 2026-09-18: ni reportlab, ni fpdf, ni
@@ -9,8 +9,13 @@ cabe en este archivo.
 
 **Que si hace y que no.** Hace texto en las fuentes que todo lector de PDF
 trae de fabrica (Helvetica normal, negrita y cursiva), lineas y rectangulos de
-relleno, en una pagina tamano carta. No hace imagenes, ni tablas automaticas, ni
-salto de pagina: el reporte es de una pagina por diseno.
+relleno, en hojas tamano carta. No hace imagenes ni tablas automaticas.
+
+**Si hace salto de pagina, desde el 2026-09-19.** El reporte sigue siendo de
+una hoja por diseno y casi siempre cabe, pero antes, cuando no cabia, el texto
+se escribia por debajo del borde y desaparecia sin dar ningun error. Quien
+dibuja llama a `nueva_pagina()` cuando ve que lo que sigue ya no cabe, y el
+documento sale con las hojas que haga falta en vez de perder el final.
 
 **Las tildes.** Se usa la codificacion WinAnsi, que es la que traen las fuentes
 de fabrica y cubre el espanol completo (tildes, enes, signos de apertura). Los
@@ -135,27 +140,59 @@ def partir(texto, tamano, ancho_maximo, negrita=False):
 
 
 class Pagina:
-    """Una pagina en blanco a la que se le van poniendo cosas encima."""
+    """Una o varias hojas en blanco a las que se les van poniendo cosas encima.
+
+    Se sigue llamando `Pagina`, en singular, porque casi siempre es una sola:
+    el reporte de Júbilo esta disenado para caber en una hoja. Pero cuando el
+    contenido no cabe hay que poder seguir en otra, y para eso esta
+    `nueva_pagina`. La alternativa era escribir por debajo del borde, que en
+    un PDF no produce ningun error: el texto simplemente no se ve, y lo
+    primero que se pierde es el final del documento, que en este reporte son
+    las salvedades legales.
+    """
 
     def __init__(self, ancho=ANCHO_CARTA, alto=ALTO_CARTA):
         self.ancho = ancho
         self.alto = alto
-        # Aqui se va acumulando el "dibujo" en el lenguaje interno del PDF.
-        self._ordenes = []
+        # Una lista de dibujos, uno por hoja. Cada dibujo es la lista de
+        # ordenes en el lenguaje interno del PDF. Siempre hay al menos una.
+        self._hojas = [[]]
+
+    @property
+    def _ordenes(self):
+        """Las ordenes de la hoja en la que se esta dibujando ahora mismo."""
+        return self._hojas[-1]
+
+    @property
+    def paginas(self):
+        """Cuantas hojas tiene el documento."""
+        return len(self._hojas)
+
+    def nueva_pagina(self):
+        """Cierra la hoja actual y empieza a dibujar en una nueva."""
+        self._hojas.append([])
+        return self.paginas
 
     # --- Lo que se puede poner en la pagina --------------------------------
 
     def texto(self, x, y, contenido, tamano=10, negrita=False, cursiva=False,
-              color=(0, 0, 0)):
-        """Escribe una linea de texto. (x, y) es la esquina inferior izquierda."""
+              color=(0, 0, 0), hoja=None):
+        """Escribe una linea de texto. (x, y) es la esquina inferior izquierda.
+
+        `hoja` sirve para escribir en una hoja que ya se cerro, contando desde
+        1. Hace falta para una sola cosa: la numeracion del pie ("1 de 3"), que
+        no se puede escribir cuando se cierra la hoja porque en ese momento
+        todavia no se sabe cuantas hojas van a ser en total.
+        """
         if not contenido:
             return
         estilo = "negrita" if negrita else ("cursiva" if cursiva else "normal")
         limpio = _escapar(_a_winansi(str(contenido)))
         r, g, b = color
-        self._ordenes.append(
-            "BT %.3f %.3f %.3f rg /%s %.2f Tf %.2f %.2f Td (%s) Tj ET"
-            % (r, g, b, estilo, tamano, x, y, limpio))
+        orden = ("BT %.3f %.3f %.3f rg /%s %.2f Tf %.2f %.2f Td (%s) Tj ET"
+                 % (r, g, b, estilo, tamano, x, y, limpio))
+        destino = self._ordenes if hoja is None else self._hojas[hoja - 1]
+        destino.append(orden)
 
     def linea(self, x1, y1, x2, y2, grosor=0.5, color=(0, 0, 0)):
         """Dibuja una linea recta entre dos puntos."""
@@ -185,24 +222,45 @@ class Pagina:
         Un PDF tiene cuatro partes: una cabecera, una lista de objetos
         numerados, una tabla que dice en que posicion del archivo empieza cada
         objeto, y un cierre. Se arma en ese orden.
+
+        Los objetos van numerados desde 1 y se referencian entre si por ese
+        numero (el "4 0 R" quiere decir "el objeto 4"). Como el documento
+        puede tener varias hojas, los numeros no se pueden escribir a mano:
+        se calculan. El reparto es este, con N hojas:
+
+            1                el catalogo, la raiz
+            2                la lista de hojas
+            3 .. 2+N         una hoja cada uno
+            3+N .. 2+2N      el dibujo de cada hoja
+            3+2N .. 5+2N     las tres fuentes de fabrica
         """
-        dibujo = "\n".join(self._ordenes).encode("cp1252", "replace")
+        cuantas = self.paginas
+        primera_hoja = 3
+        primer_dibujo = primera_hoja + cuantas
+        primera_fuente = primer_dibujo + cuantas
 
         objetos = []
         # 1: el catalogo, la raiz del documento.
         objetos.append(b"<< /Type /Catalog /Pages 2 0 R >>")
-        # 2: la lista de paginas. Aqui solo hay una.
-        objetos.append(b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-        # 3: la pagina, con su tamano y las fuentes que usa.
-        objetos.append(
-            ("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] "
-             "/Resources << /Font << /normal 5 0 R /negrita 6 0 R "
-             "/cursiva 7 0 R >> >> /Contents 4 0 R >>"
-             % (self.ancho, self.alto)).encode("ascii"))
-        # 4: el dibujo en si.
-        objetos.append(b"<< /Length %d >>\nstream\n%s\nendstream"
-                       % (len(dibujo) + 1, dibujo))
-        # 5, 6 y 7: las tres fuentes de fabrica.
+        # 2: la lista de hojas, con cuantas son y donde esta cada una.
+        hijos = " ".join("%d 0 R" % (primera_hoja + i) for i in range(cuantas))
+        objetos.append(("<< /Type /Pages /Kids [%s] /Count %d >>"
+                        % (hijos, cuantas)).encode("ascii"))
+        # Una hoja por cada dibujo, todas del mismo tamano y con las mismas
+        # tres fuentes disponibles.
+        for indice in range(cuantas):
+            objetos.append(
+                ("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] "
+                 "/Resources << /Font << /normal %d 0 R /negrita %d 0 R "
+                 "/cursiva %d 0 R >> >> /Contents %d 0 R >>"
+                 % (self.ancho, self.alto, primera_fuente, primera_fuente + 1,
+                    primera_fuente + 2, primer_dibujo + indice)).encode("ascii"))
+        # Y el dibujo de cada hoja, en el mismo orden.
+        for ordenes in self._hojas:
+            dibujo = "\n".join(ordenes).encode("cp1252", "replace")
+            objetos.append(b"<< /Length %d >>\nstream\n%s\nendstream"
+                           % (len(dibujo) + 1, dibujo))
+        # Las tres fuentes de fabrica, compartidas por todas las hojas.
         for estilo in ("normal", "negrita", "cursiva"):
             objetos.append(
                 ("<< /Type /Font /Subtype /Type1 /BaseFont /%s "
