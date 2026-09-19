@@ -14,7 +14,7 @@ Este archivo orienta a cualquier LLM que trabaje en este repo. Léelo antes de a
 |---|---|---|
 | `calculadora/` | Los números: RPM, RAIS, lagunas, recuperación, costo y retorno, y el **banco de palancas**. Python puro, sin IA. Cada módulo tiene su `probar_*.py` | Claude la ejecuta, no la reescribe en caliente |
 | `kit-contexto/` | Lo que Júbilo sabe y cómo habla. Incluye `system-prompt.md` y `bienvenida-y-aviso.txt` | Claude lo lee en cada conversación |
-| `bot/` | El despliegue: `bot.py` (el cartero entre Telegram y Claude), `registro.py` (la bitácora), `jubilo.service` y `deploy_jubilo.sh`. Sus dos pruebas, `probar_registro.py` y `probar_bot.py`, corren en el Mac sin servidor | Corre en el VPS, no en el Mac |
+| `bot/` | El despliegue: `bot.py` (el cartero entre Telegram y Claude), `registro.py` (la bitácora), `jubilo.service`, `deploy_jubilo.sh` y `verificar_servidor.py` (comprueba la máquina antes de subir nada). Sus dos pruebas, `probar_registro.py` y `probar_bot.py`, corren en el Mac sin servidor | Corre en el VPS, no en el Mac |
 | `tramites/` | **Lo único del repo que toca internet EN CONVERSACIÓN**, o sea lo único que Júbilo puede ejecutar mientras atiende a alguien. (El otro que descarga es `analisis/rendimiento_afp.py`, pero lo corre Santiago a mano en el Mac para refrescar una tabla de datos, nunca el agente.) Hoy solo `pedir_historia.py`, que le pide a Colpensiones que le mande la historia laboral al correo de la persona. Vive aparte a propósito: el cerebro del agente sigue sin internet y solo ejecuta esto como una herramienta determinista, igual que la calculadora | Claude lo ejecuta, con `--allowedTools` |
 | `analisis/` | El ciclo de feedback: `traer_datos.sh` baja la bitácora del servidor y `reporte.py` la vuelve un `.md` legible. La carpeta `datos/` está en el `.gitignore` | Se corre en el Mac después de que la gente use el bot |
 | `casos/`, `cobertura/`, `verificacion/` | Casos de prueba y control de cobertura | Validación |
@@ -51,7 +51,19 @@ Si alguien pide que le borren lo suyo, `registro.borrar_persona(DB, seudonimo)` 
 
 ## 3. Cómo se prueban los cambios (obligatorio)
 
-**Nunca pruebes un cambio mandándolo al bot de Telegram de producción.** Hay tres niveles y con esos basta:
+**Nunca pruebes un cambio mandándolo al bot de Telegram de producción.** Hay tres niveles y con esos basta.
+
+**Cuántas suites hay, sin tener que creerle a este archivo.** Hoy son **17**: trece en `calculadora/`, dos en `bot/`, una en `reporte/` y una en `tramites/`. Ese número crece, así que en vez de fiarte de él, cuéntalas y córrelas todas de una:
+
+```bash
+cd ~/Developer/jubilo
+for f in calculadora/probar_*.py bot/probar_*.py reporte/probar_*.py tramites/probar_*.py; do
+  printf '%-40s ' "$f"; python3 -B "$f" >/tmp/o.txt 2>&1 && echo OK || { echo FALLO; tail -5 /tmp/o.txt; }
+done
+```
+
+Todas tienen que decir OK. Ninguna necesita servidor ni internet.
+
 
 **Nivel 1, la calculadora: las pruebas automáticas.** Todo cambio en `calculadora/` se valida corriendo las **trece** suites (eran once hasta el 2026-09-19; se sumaron `probar_palancas.py` y `probar_anomalias.py`). Tarda segundos y no toca el servidor:
 
@@ -88,6 +100,14 @@ La mitad de sus comprobaciones verifican lo contrario de lo normal: que la cédu
 ## 4. Desplegar
 
 Solo después de que las pruebas del nivel que corresponda estén en verde.
+
+**Y solo después de verificar el servidor.** Las pruebas del Mac comprueban el código; no comprueban la máquina donde va a correr. El 2026-09-19 se desplegó el cierre por inactividad con las 17 suites en verde y la función nació muerta, porque al servidor le faltaba el extra `job-queue` de `python-telegram-bot`: `app.job_queue` valía `None`, cada llamada se devolvía en silencio y no hubo un solo error. Se descubrió por casualidad leyendo el log.
+
+```bash
+python3 -B bot/verificar_servidor.py
+```
+
+Comprueba que se pueda entrar, que exista el intérprete del entorno virtual (**ojo:** el `pip3` suelto del servidor instala en otro sitio, y mirar ahí fue lo que confundió el diagnóstico ese día), que todas las librerías que importan `bot.py` y `registro.py` se importen **con ese** intérprete, que el `JobQueue` exista de verdad, y que el servicio esté activo. La lista de librerías no está escrita a mano: la lee de los propios archivos, así que un import nuevo sin instalar lo caza solo. `deploy_jubilo.sh` ya lo corre como paso 1d y se detiene si falla.
 
 **Cambios del kit o la calculadora** (van por GitHub):
 
