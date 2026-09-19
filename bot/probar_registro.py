@@ -131,16 +131,48 @@ with tempfile.TemporaryDirectory() as carpeta:
     revisar(abs(fila[2] - 0.0431) < 1e-9, "el costo del mensaje queda guardado")
     revisar(n_eventos == 2, "los eventos de dos personas quedan separados")
 
+    # La tabla `cierres` la crea bot.py, no registro.py, pero guarda filas por
+    # seudonimo y por lo tanto `borrar_persona` tiene que limpiarla tambien.
+    # Se crea aqui a mano para poder probarlo sin arrancar el bot entero.
+    con = sqlite3.connect(db)
+    con.execute("""CREATE TABLE IF NOT EXISTS cierres (
+        seudonimo TEXT PRIMARY KEY, ts_reporte TEXT,
+        ts_pregunta TEXT, ts_respuesta TEXT)""")
+    con.execute("INSERT INTO cierres (seudonimo, ts_reporte) VALUES (?, ?)",
+                ("abc123abc123", "2026-09-19T12:00:00-05:00"))
+    con.execute("INSERT INTO cierres (seudonimo, ts_reporte) VALUES (?, ?)",
+                ("otra-persona", "2026-09-19T12:00:00-05:00"))
+    con.commit()
+    con.close()
+
     # Alguien pide que le borren lo suyo: se va todo lo de esa persona y nada más.
     borradas = registro.borrar_persona(db, "abc123abc123")
     con = sqlite3.connect(db)
     quedan_turnos = con.execute("SELECT COUNT(*) FROM turnos").fetchone()[0]
     quedan_eventos = con.execute("SELECT COUNT(*) FROM eventos").fetchone()[0]
+    quedan_cierres = con.execute("SELECT COUNT(*) FROM cierres").fetchone()[0]
+    suyos_en_cierres = con.execute(
+        "SELECT COUNT(*) FROM cierres WHERE seudonimo = ?",
+        ("abc123abc123",)).fetchone()[0]
     con.close()
 
-    revisar(borradas == 2, "borrar a una persona borra su turno y su evento")
+    revisar(borradas == 3,
+            "borrar a una persona borra su turno, su evento y su cierre")
     revisar(quedan_turnos == 0, "no queda ningún turno suyo")
     revisar(quedan_eventos == 1, "y la otra persona sigue intacta")
+    revisar(suyos_en_cierres == 0,
+            "no queda rastro suyo en `cierres` (si no, el borrado seria mentira)")
+    revisar(quedan_cierres == 1, "el cierre de la otra persona no se toca")
+
+    # Y una base VIEJA, que todavia no tiene la tabla `cierres`, no puede
+    # reventar el borrado: quien pide que le borren lo suyo tiene derecho a que
+    # se le borre aunque su base sea de antes de que existiera esa tabla.
+    db_vieja = str(Path(carpeta) / "vieja.db")
+    registro.inicializar(db_vieja)
+    registro.anotar_evento(db_vieja, "zzz", "2026-09-19T10:00:00-05:00",
+                           "aviso_mostrado")
+    revisar(registro.borrar_persona(db_vieja, "zzz") == 1,
+            "el borrado funciona en una base que no tiene la tabla `cierres`")
 
     # La sal se inventa sola la primera vez y despues no cambia.
     ruta_sal = Path(carpeta) / "config" / "sal.txt"

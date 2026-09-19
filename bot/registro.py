@@ -201,9 +201,20 @@ def borrar_persona(db, seudonimo_):
     con = sqlite3.connect(db)
     t = con.execute("DELETE FROM turnos WHERE seudonimo = ?", (seudonimo_,)).rowcount
     e = con.execute("DELETE FROM eventos WHERE seudonimo = ?", (seudonimo_,)).rowcount
+    # La tabla `cierres` (quien ya recibio su reporte de cierre y su pregunta
+    # de satisfaccion) la crea bot.py, no este modulo, y tambien va por
+    # seudonimo. Hay que borrarla aqui o "todo rastro" seria mentira: quedaria
+    # una fila diciendo que esa persona existio y cuando se le respondio.
+    # Va dentro de un try porque una base vieja puede no tener esa tabla
+    # todavia, y en ese caso no hay nada que borrar y no es un error.
+    try:
+        c = con.execute("DELETE FROM cierres WHERE seudonimo = ?",
+                        (seudonimo_,)).rowcount
+    except sqlite3.OperationalError:
+        c = 0
     con.commit()
     con.close()
-    return t + e
+    return t + e + c
 
 
 # --- Una pista de si la respuesta fue el diagnostico ------------------------

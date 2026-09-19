@@ -14,6 +14,7 @@ import pathlib
 import re
 import sqlite3
 import subprocess
+import sys
 import time
 import unicodedata
 import urllib.parse
@@ -69,6 +70,77 @@ VERSION_AVISO = "1.2"
 # anotar nada. Se crea solo la primera vez que arranca el bot y no sale de aqui.
 ARCHIVO_SAL = BASE / "config" / "sal.txt"
 SAL = None                                  # se llena al arrancar, en main()
+
+# --- El reporte de cierre y la pregunta del final ---------------------------
+#
+# Cuando una conversacion se queda callada, quiere decir que ya termino. En ese
+# momento el bot le manda a la persona su diagnostico en una pagina de PDF, que
+# es algo que se guarda, se relee y se reenvia, a diferencia de unos mensajes
+# de chat que se pierden hacia arriba en el scroll.
+
+# Cuanto silencio hace falta para dar la conversacion por terminada: 30 minutos.
+#
+# Por que 30 y no menos: la respuesta mas lenta medida hasta hoy tardo 320
+# segundos (algo mas de 5 minutos), y la conversacion mas larga del primer grupo
+# de prueba duro 57 minutos con pausas de varios minutos entre mensajes. Con 10
+# o 15 minutos el reporte le caeria encima a alguien que todavia esta leyendo y
+# pensando la siguiente pregunta, y eso se siente como que lo estan echando.
+#
+# Por que 30 y no mas: pasada la media hora la persona ya se fue del chat, y un
+# reporte que llega tres horas despues llega cuando ya nadie se acuerda del tema.
+# Media hora es el punto donde la conversacion claramente acabo y la persona
+# todavia tiene el tema fresco.
+#
+# Esta en una constante justamente para poder moverlo sin buscarlo. Es el numero
+# que mas probablemente haya que ajustar con datos reales.
+MINUTOS_DE_SILENCIO_PARA_CERRAR = 30
+
+# Lo mismo en segundos, que es lo que pide el temporizador de la libreria.
+ESPERA_PARA_CERRAR = MINUTOS_DE_SILENCIO_PARA_CERRAR * 60
+
+# Donde se escribe el PDF mientras se manda. Es una carpeta aparte, y no la del
+# usuario, para que la regla sea simple de verificar: todo lo que este aqui es
+# temporal y se puede borrar.
+#
+# **Que pasa con el PDF despues de mandarlo, que es lo importante:** el archivo
+# lleva datos personales (el nombre de la persona y toda su situacion pensional),
+# asi que se borra apenas Telegram confirma que lo recibio, en el `finally` de
+# `mandar_reporte_de_cierre`. En disco no queda nada. Y por si el proceso se
+# muere justo en la mitad, al arrancar se barre la carpeta entera (ver `main`).
+# El unico sitio donde el reporte sobrevive es el chat de su dueno.
+CARPETA_REPORTES = BASE / "reportes"
+
+# El texto que acompana al PDF en el mismo mensaje.
+TEXTO_REPORTE = (
+    "Te dejo tu diagnóstico en una página, para que lo guardes o se lo muestres "
+    "a quien quieras. Es preliminar: no es una liquidación certificada."
+)
+
+# La pregunta que va DESPUES del reporte, nunca antes.
+#
+# TEXTO APROBADO POR SANTIAGO EL 2026-09-19. No se cambia sin decirselo.
+#
+# Que pide, y son dos cosas en una sola pregunta: si le quedo alguna duda de su
+# pension (o sea, si hay algo mas que podamos hacer por ella) y que deberiamos
+# hacer distinto como producto.
+#
+# Tres decisiones de redaccion que estan detras de este texto, para que nadie
+# las deshaga sin querer al "mejorarlo":
+#
+#   1. Es ABIERTA, no una escala de 1 a 5. Viene del bloque 4 de
+#      `analisis/mejoras-por-hacer.md`. Un numero del 1 al 5 no dice que hay
+#      que arreglar; una frase suya si.
+#   2. Dice QUIEN LEE la respuesta. La version anterior decia "es para mi, no
+#      para ti", y eso personaliza en el bot algo que en realidad va a una
+#      bitacora que lee un equipo. La persona acaba de aceptar un aviso de
+#      privacidad: ser literal aqui es coherente con ese aviso.
+#   3. Va al final de TODO, despues del PDF. Preguntar antes de entregar lo que
+#      la persona vino a buscar es pedirle algo antes de darle nada.
+TEXTO_SATISFACCION = (
+    "Antes de cerrar: ¿te quedó alguna duda sobre tu pensión, o algo que "
+    "hubieras querido que hiciera distinto? Cualquier cosa que me escribas "
+    "la lee el equipo que está construyendo Júbilo."
+)
 
 # --- Los comandos que el bot contesta solo, sin molestar a Claude -----------
 #
@@ -213,7 +285,7 @@ def candado_de(chat_id):
 # --- Guardar que sesion de Claude corresponde a cada chat -------------------
 
 def inicializar_db():
-    """Crea las cuatro tablas si es la primera vez que arranca el bot."""
+    """Crea las cinco tablas si es la primera vez que arranca el bot."""
     con = sqlite3.connect(DB)
 
     # La que ya existia: que conversacion de Claude le corresponde a cada persona.
@@ -255,6 +327,27 @@ def inicializar_db():
             huella  TEXT NOT NULL,
             ts      TEXT NOT NULL,
             PRIMARY KEY (chat_id, huella)
+        )
+    """)
+
+    # A quien ya se le mando el reporte de cierre y a quien ya se le hizo la
+    # pregunta del final. Existe por una razon concreta: el reporte se manda
+    # UNA sola vez por persona, y un simple apunte en memoria no sirve, porque
+    # el bot se reinicia en cada despliegue y systemd lo revive si se muere. Si
+    # la memoria fuera lo unico, al volver a arrancar el bot creeria que no le
+    # ha mandado nada a nadie y le mandaria a todos un segundo reporte.
+    #
+    # **Va con el seudonimo y no con el chat de Telegram, a proposito.** Aqui no
+    # hace falta saber quien es la persona, solo si ya se le mando lo suyo, y el
+    # seudonimo alcanza para eso. De paso esta tabla no queda entre las que
+    # `analisis/traer_datos.sh` tiene que borrar antes de sacar la copia del
+    # servidor: no hay nada que identifique a nadie.
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS cierres (
+            seudonimo    TEXT PRIMARY KEY,
+            ts_reporte   TEXT,   -- cuando se le mando el PDF (vacio = no se le ha mandado)
+            ts_pregunta  TEXT,   -- cuando se le hizo la pregunta de satisfaccion
+            ts_respuesta TEXT    -- cuando contesto esa pregunta
         )
     """)
 
@@ -402,6 +495,71 @@ def anotar(chat_id, evento, detalle=None):
         registro.anotar_evento(DB, quien(chat_id), ahora(), evento, detalle)
     except Exception as e:
         log.error("no se pudo anotar el evento '%s': %s", evento, e)
+
+
+# --- Quien ya recibio su reporte de cierre ----------------------------------
+#
+# Las cuatro funciones de abajo son la memoria del cierre. Todas leen y escriben
+# en la tabla `cierres`, y todas usan el seudonimo: el chat de Telegram no entra
+# nunca aqui. Como viven en la base y no en memoria, sobreviven a un reinicio,
+# que es justo lo que hace falta para no mandar dos veces el mismo reporte.
+
+def _fila_de_cierre(chat_id):
+    """Devuelve la fila de `cierres` de esta persona, o None si no tiene."""
+    con = sqlite3.connect(DB)
+    fila = con.execute(
+        "SELECT ts_reporte, ts_pregunta, ts_respuesta FROM cierres WHERE seudonimo = ?",
+        (quien(chat_id),),
+    ).fetchone()
+    con.close()
+    return fila
+
+
+def ya_se_mando_el_reporte(chat_id):
+    """Dice si a esta persona ya se le mando su reporte de cierre alguna vez."""
+    fila = _fila_de_cierre(chat_id)
+    return bool(fila and fila[0])
+
+
+def marcar_reporte_enviado(chat_id):
+    """Anota que el reporte ya salio. Desde aqui, a esta persona no se le manda otro."""
+    con = sqlite3.connect(DB)
+    # INSERT OR IGNORE primero y UPDATE despues: asi funciona igual si la fila
+    # ya existia y si es la primera vez, sin tener que preguntar antes.
+    con.execute("INSERT OR IGNORE INTO cierres (seudonimo) VALUES (?)", (quien(chat_id),))
+    con.execute("UPDATE cierres SET ts_reporte = ? WHERE seudonimo = ?",
+                (ahora(), quien(chat_id)))
+    con.commit()
+    con.close()
+
+
+def marcar_pregunta_hecha(chat_id):
+    """Anota que ya se le hizo la pregunta del final. Se hace una sola vez por persona."""
+    con = sqlite3.connect(DB)
+    con.execute("INSERT OR IGNORE INTO cierres (seudonimo) VALUES (?)", (quien(chat_id),))
+    con.execute("UPDATE cierres SET ts_pregunta = ? WHERE seudonimo = ?",
+                (ahora(), quien(chat_id)))
+    con.commit()
+    con.close()
+
+
+def espera_respuesta_de_satisfaccion(chat_id):
+    """Dice si a esta persona se le pregunto y todavia no ha contestado.
+
+    Sirve para reconocer que el siguiente mensaje que escriba es la respuesta a
+    esa pregunta, y poder anotarla. Despues de contestada, deja de ser cierto.
+    """
+    fila = _fila_de_cierre(chat_id)
+    return bool(fila and fila[1] and not fila[2])
+
+
+def marcar_respuesta_recibida(chat_id):
+    """Anota que ya contesto la pregunta del final, para no volver a tomarle la palabra."""
+    con = sqlite3.connect(DB)
+    con.execute("UPDATE cierres SET ts_respuesta = ? WHERE seudonimo = ?",
+                (ahora(), quien(chat_id)))
+    con.commit()
+    con.close()
 
 
 # --- Preparar el espacio privado de cada usuario ----------------------------
@@ -638,6 +796,31 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
         return
 
+    # --- El temporizador del cierre ------------------------------------------
+    # Cada mensaje que llega reinicia la cuenta atras del reporte. Va aqui
+    # arriba, y no al final, para que cuente TODO lo que la persona escriba:
+    # tambien un comando, tambien una nota de voz, tambien un archivo repetido.
+    # Cualquiera de esas cosas significa que la conversacion sigue viva, y
+    # mandarle su reporte de cierre en mitad de la charla seria absurdo.
+    #
+    # El nombre sale del perfil de Telegram de la propia persona y viaja solo en
+    # la memoria del temporizador, para que su reporte salga con su nombre. No
+    # se guarda en la base ni entra en la bitacora.
+    nombre_de_perfil = getattr(update.effective_user, "full_name", None)
+    programar_cierre(getattr(context, "job_queue", None), chat_id, nombre_de_perfil)
+
+    # --- La respuesta a la pregunta del final --------------------------------
+    # Si ya se le mando el reporte y se le pregunto si le sirvio, lo primero que
+    # escriba despues es esa respuesta, y es lo unico que se tiene para saber si
+    # esto le sirve a alguien. Queda anotada como un hito mas y el mensaje sigue
+    # su camino normal hacia Claude, que le contesta como a cualquier otro.
+    # El texto pasa por el filtro de datos personales dentro de `anotar_evento`.
+    if espera_respuesta_de_satisfaccion(chat_id):
+        dicho = (mensaje.text or mensaje.caption or "").strip()
+        if dicho:
+            anotar(chat_id, "respuesta_satisfaccion", dicho[:500])
+            marcar_respuesta_recibida(chat_id)
+
     # --- Los comandos los contesta el bot, nunca Claude ----------------------
     # Va justo despues del candado del aviso, para que un /start de alguien que
     # nunca ha escrito siga mostrando la bienvenida completa. De aqui en
@@ -789,6 +972,12 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
     for i in range(0, len(respuesta), 4000):
         await mensaje.reply_text(respuesta[i:i + 4000])
 
+    # La cuenta atras del cierre se reinicia otra vez, ahora que la persona ya
+    # tiene la respuesta en la mano. Un documento puede tardar cinco minutos en
+    # procesarse, y sin esto esos cinco minutos se le descontarian del rato que
+    # tiene para seguir preguntando.
+    programar_cierre(getattr(context, "job_queue", None), chat_id, nombre_de_perfil)
+
 
 def anotar_turno_del_mensaje(chat_id, texto, respuesta, tuvo_adjunto, espera_cola_ms, metricas):
     """Deja el turno escrito en la bitacora, con sus numeros.
@@ -825,11 +1014,257 @@ def anotar_turno_del_mensaje(chat_id, texto, respuesta, tuvo_adjunto, espera_col
         log.error("no se pudo anotar el turno de %s: %s", chat_id, e)
 
 
+# --- El reporte de cierre: armarlo y mandarlo -------------------------------
+
+def _extracciones_de(chat_id):
+    """Los JSON que Júbilo dejo guardados de esta persona, del mas nuevo al mas viejo.
+
+    Es la unica huella que queda de su historia laboral: el PDF original se
+    borra apenas se extrae, y lo que se guarda es este JSON con los numeros y
+    sin nombre ni cedula.
+    """
+    carpeta = USUARIOS / str(chat_id) / "extracciones"
+    if not carpeta.is_dir():
+        return []
+    return sorted(carpeta.glob("*.json"), key=lambda r: r.stat().st_mtime, reverse=True)
+
+
+def buscar_diagnostico(chat_id):
+    """Rearma el diagnostico de esta persona. Devuelve (diagnostico, caso, fondo).
+
+    Devuelve los tres en None cuando no hay nada que reportar, que es el caso de
+    quien nunca mando su documento o cuyo documento no alcanzo para un
+    diagnostico completo. En ese caso no se manda reporte: una pagina llena de
+    "sin dato" es peor que el silencio.
+
+    Busca en dos sitios, en este orden:
+      1. Un JSON de diagnostico ya guardado, si existe. Es lo mas fiel, porque
+         es exactamente lo que se le dijo a la persona en el chat.
+      2. Si no lo hay, vuelve a correr `diagnosticar.py` sobre la extraccion.
+         **Esto no es la IA calculando:** es el mismo programa de siempre, con
+         el mismo archivo de entrada, asi que da el mismo resultado.
+
+    OJO, limite conocido y anotado a proposito: `--sexo` y `--edad` se los pasa
+    Júbilo a mano cuando el documento no los trae, y ese dato vive en la
+    conversacion, no en la extraccion. Si el documento no traia ninguno de los
+    dos, este recalculo sale incompleto y aqui se decide no mandar reporte.
+    """
+    archivos = _extracciones_de(chat_id)
+    # Un archivo cuyo nombre diga "diagnostico" es la salida ya calculada;
+    # cualquier otro es la extraccion de la historia laboral.
+    ya_calculados = [r for r in archivos if "diagnostico" in r.name.lower()]
+    casos = [r for r in archivos if r not in ya_calculados]
+    if not casos:
+        return None, None, None
+
+    caso = json.loads(casos[0].read_text(encoding="utf-8"))
+
+    diagnostico = None
+    for ruta in ya_calculados:
+        try:
+            posible = json.loads(ruta.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if posible.get("listo_para_entregar"):
+            diagnostico = posible
+            break
+
+    if diagnostico is None:
+        # A correr la calculadora otra vez, con el mismo archivo de entrada.
+        salida = subprocess.run(
+            ["python3", str(REPO / "calculadora" / "diagnosticar.py"),
+             str(casos[0]), "--json"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if salida.returncode != 0:
+            log.error("no se pudo rehacer el diagnostico: %s", salida.stderr[:300])
+            return None, None, None
+        diagnostico = json.loads(salida.stdout)
+
+    # El candado: sin diagnostico completo no hay reporte.
+    if not diagnostico.get("listo_para_entregar"):
+        return None, None, None
+
+    fondo = (caso.get("documento") or {}).get("administradora_emisora")
+    return diagnostico, caso, fondo
+
+
+def construir_pdf_de_cierre(chat_id, nombre, destino):
+    """Escribe el PDF del reporte en `destino`. Devuelve la ruta, o None si no hay nada.
+
+    Todo el trabajo de verdad lo hace `reporte/armar_reporte.py`, que es una
+    plantilla fija: aqui no se redacta ni se calcula nada. El modulo se importa
+    aqui adentro y no arriba del archivo a proposito, porque en el Mac la
+    carpeta del servidor no existe y si no, ni siquiera se podria importar
+    `bot.py` para probarlo.
+    """
+    diagnostico, caso, fondo = buscar_diagnostico(chat_id)
+    if diagnostico is None:
+        return None
+
+    carpeta_del_modulo = str(REPO / "reporte")
+    if carpeta_del_modulo not in sys.path:
+        sys.path.insert(0, carpeta_del_modulo)
+    import armar_reporte
+
+    armar_reporte.armar(diagnostico, nombre, fondo, str(destino), caso=caso)
+    return destino
+
+
+async def mandar_reporte_de_cierre(context):
+    """Le manda a la persona su reporte, y despues la pregunta del final.
+
+    La dispara el temporizador cuando la conversacion lleva
+    MINUTOS_DE_SILENCIO_PARA_CERRAR sin un mensaje nuevo. El orden de los pasos
+    no es casual:
+
+      1. Si ya se le mando, no se hace nada. Ni siquiera se arma el PDF.
+      2. Si no hay diagnostico, tampoco. Silencio, que es mejor que un
+         "aqui esta tu reporte" vacio.
+      3. Se manda el PDF, y solo cuando Telegram confirma, queda marcado como
+         enviado. Si el envio falla, no queda marcado, y el proximo mensaje de
+         la persona vuelve a armar el temporizador y se reintenta.
+      4. La pregunta de satisfaccion va DESPUES del PDF, nunca antes. Preguntar
+         "te sirvio" antes de entregar lo que sirve no tiene sentido.
+
+    Va entera dentro de un try, como el resto de lo opcional del bot: que se
+    caiga un reporte no puede tumbar el bot para todos los demas.
+    """
+    datos = getattr(context.job, "data", None) or {}
+    chat_id = datos.get("chat_id")
+    nombre = datos.get("nombre")
+    destino = None
+
+    try:
+        # Paso 1: el candado de una sola vez por persona. Vive en la base, asi
+        # que sigue en pie aunque el bot se haya reiniciado entre medias.
+        if ya_se_mando_el_reporte(chat_id):
+            return
+
+        # Paso 2: armar el PDF. Escribir un PDF bloquea, asi que se hace en un
+        # hilo aparte para no congelar al resto de las conversaciones.
+        CARPETA_REPORTES.mkdir(parents=True, exist_ok=True)
+        destino = CARPETA_REPORTES / f"cierre-{chat_id}.pdf"
+        ruta = await asyncio.to_thread(construir_pdf_de_cierre, chat_id, nombre, destino)
+        if ruta is None:
+            log.info("no hay diagnostico para el reporte de cierre de %s", chat_id)
+            return
+
+        # Paso 3: mandarlo, y recien ahi marcarlo.
+        with open(ruta, "rb") as archivo:
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=archivo,
+                filename="Jubilo - tu diagnostico pensional.pdf",
+                caption=TEXTO_REPORTE,
+            )
+        marcar_reporte_enviado(chat_id)
+        anotar(chat_id, "reporte_enviado")
+
+        # Paso 4: la pregunta del final, despues del reporte y una sola vez.
+        await context.bot.send_message(chat_id=chat_id, text=TEXTO_SATISFACCION)
+        marcar_pregunta_hecha(chat_id)
+        anotar(chat_id, "pregunta_satisfaccion")
+    except Exception as e:
+        log.error("no se pudo mandar el reporte de cierre a %s: %s", chat_id, e)
+    finally:
+        # El PDF lleva el nombre de la persona y toda su situacion pensional, asi
+        # que no se queda en el disco del servidor ni un minuto de mas. Se borra
+        # pase lo que pase, tambien cuando el envio fallo.
+        if destino is not None:
+            try:
+                destino.unlink(missing_ok=True)
+            except OSError as e:
+                log.error("no se pudo borrar el reporte temporal %s: %s", destino, e)
+
+
+def programar_cierre(job_queue, chat_id, nombre=None, segundos=None):
+    """Pone (o reinicia) el temporizador del cierre de esta conversacion.
+
+    Se llama cada vez que la persona escribe. Como cada persona tiene un
+    temporizador con su propio nombre, volver a llamarla borra el anterior y
+    pone uno nuevo: o sea que la cuenta atras arranca de cero con cada mensaje,
+    que es justo lo que se quiere. Mientras la conversacion siga viva, el
+    reporte no sale.
+
+    El nombre de la persona viaja aqui, en la memoria del temporizador, y no se
+    guarda en ninguna parte: es para que su reporte salga con su nombre y nada
+    mas. Si el bot se reinicia, el nombre se pierde y el reporte sale sin el.
+    """
+    if job_queue is None:            # en las pruebas no hay temporizador de verdad
+        return
+    try:
+        # Si ya se le mando, no hay nada que programar.
+        if ya_se_mando_el_reporte(chat_id):
+            return
+
+        etiqueta = f"cierre-{chat_id}"
+        for anterior in job_queue.get_jobs_by_name(etiqueta):
+            anterior.schedule_removal()
+
+        job_queue.run_once(
+            mandar_reporte_de_cierre,
+            ESPERA_PARA_CERRAR if segundos is None else segundos,
+            data={"chat_id": chat_id, "nombre": nombre},
+            name=etiqueta,
+        )
+    except Exception as e:
+        log.error("no se pudo programar el cierre de %s: %s", chat_id, e)
+
+
+def conversaciones_para_retomar():
+    """Quien se quedo esperando su reporte cuando el bot se reinicio.
+
+    Los temporizadores viven en memoria, asi que un reinicio (y hay uno en cada
+    despliegue) se los lleva por delante. Sin esto, quien estuviera callado en
+    ese momento no recibiria nunca su reporte.
+
+    Devuelve una lista de (chat_id, segundos_que_faltan). A quien ya se le paso
+    la media hora estando el bot apagado, se le manda a los 30 segundos de
+    arrancar, para no dispararle todo encima en el mismo instante del arranque.
+    """
+    pendientes = []
+    try:
+        con = sqlite3.connect(DB)
+        chats = [fila[0] for fila in con.execute("SELECT chat_id FROM sesiones")]
+        con.close()
+
+        for chat_id in chats:
+            if ya_se_mando_el_reporte(chat_id):
+                continue
+
+            # Cuando escribio por ultima vez. Sale de la bitacora, que se anota
+            # con el seudonimo, asi que aqui se traduce el chat a seudonimo.
+            con = sqlite3.connect(DB)
+            fila = con.execute(
+                "SELECT MAX(ts) FROM turnos WHERE seudonimo = ?", (quien(chat_id),)
+            ).fetchone()
+            con.close()
+            if not fila or not fila[0]:
+                continue
+
+            ultimo = datetime.datetime.fromisoformat(fila[0])
+            pasado = (datetime.datetime.now(datetime.timezone.utc) - ultimo).total_seconds()
+            faltan = ESPERA_PARA_CERRAR - pasado
+            pendientes.append((chat_id, max(30.0, faltan)))
+    except Exception as e:
+        log.error("no se pudieron retomar los cierres pendientes: %s", e)
+    return pendientes
+
+
 def main():
     global SAL
 
     USUARIOS.mkdir(parents=True, exist_ok=True)
     inicializar_db()
+
+    # La carpeta de los reportes temporales, y una barrida de lo que haya
+    # quedado dentro. Si el bot se murio justo mientras mandaba un reporte, ese
+    # PDF con datos personales sigue ahi: se borra al arrancar, para que la
+    # carpeta este siempre vacia salvo los segundos que dura un envio.
+    CARPETA_REPORTES.mkdir(parents=True, exist_ok=True)
+    for sobrante in CARPETA_REPORTES.glob("*.pdf"):
+        sobrante.unlink(missing_ok=True)
 
     # El secreto del seudonimo. La primera vez se inventa solo y queda guardado;
     # de ahi en adelante siempre es el mismo, para que una misma persona conserve
@@ -847,6 +1282,14 @@ def main():
     medios = (filters.TEXT | filters.Document.ALL | filters.PHOTO
               | filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE)
     app.add_handler(MessageHandler(medios, al_recibir_mensaje))
+
+    # Los temporizadores de cierre viven en memoria y el reinicio se los llevo.
+    # Aqui se vuelven a poner los de quien quedo callado y sin reporte, con el
+    # tiempo que le faltaba. Sin nombre: ese solo existia en la memoria anterior.
+    for chat_id, faltan in conversaciones_para_retomar():
+        programar_cierre(app.job_queue, chat_id, None, segundos=faltan)
+        log.info("cierre pendiente retomado para %s, en %.0f s", chat_id, faltan)
+
     log.info("Júbilo arrancó")
     app.run_polling()
 
