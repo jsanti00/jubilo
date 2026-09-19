@@ -12,7 +12,9 @@ from datos_sistema import (
     RENDIMIENTO_REAL_OBSERVADO, RENDIMIENTO_REAL_OBSERVADO_CENTRAL,
     RENDIMIENTO_REAL_PROSPECTIVO, FUENTE_RENDIMIENTO, ADVERTENCIA_RENDIMIENTO,
     ADVERTENCIA_PROSPECTIVO, FUENTE_PRIMA_RENTA_VARIABLE,
-    EXPOSICION_RENTA_VARIABLE, PRIMA_RENTA_VARIABLE_LARGO_PLAZO,
+    EXPOSICION_RENTA_VARIABLE, EXPOSICION_RENTA_VARIABLE_BANDA,
+    FUENTE_EXPOSICION_RENTA_VARIABLE, RENDIMIENTO_PROSPECTIVO_BANDA,
+    PRIMA_RENTA_VARIABLE_LARGO_PLAZO,
     MODERADO_NO_SUPERA_A_CONSERVADOR, RENDIMIENTO_REAL_ULTIMOS_5_ANIOS,
     mezcla_obligatoria, perfiles_que_la_ley_le_permite,
     rendimiento_de_la_mezcla, FUENTE_CONVERGENCIA,
@@ -622,18 +624,29 @@ def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
                 f"({RENDIMIENTO_REAL_OBSERVADO_CENTRAL['conservador']:.2%}), más "
                 "la exposición ADICIONAL a renta variable de cada perfil respecto "
                 f"de él, por una prima de {PRIMA_RENTA_VARIABLE_LARGO_PLAZO:.1%} "
-                "real de largo plazo. Exposiciones supuestas: " +
-                ", ".join(f"{p} {e:.0%}"
+                "real de largo plazo. Exposición usada, el punto medio de la "
+                "banda legal de cada fondo: " +
+                ", ".join(f"{p} {e:.1%}"
                           for p, e in EXPOSICION_RENTA_VARIABLE.items())),
             "prospectivo_fuente_de_la_prima": FUENTE_PRIMA_RENTA_VARIABLE,
-            "prospectivo_eslabon_sin_verificar": (
-                "[VERIFICAR] los límites de exposición a renta variable por "
-                "perfil no se verificaron en fuente primaria el 2026-07-28: el "
-                "Gestor Normativo no entregó el articulado del Decreto 2555 y el "
-                "documento técnico de la URF es un PDF del que no se puede "
-                "extraer texto. Además se asume que cada fondo usa su límite "
-                "completo, cosa que ninguno hace, así que el supuesto es el borde "
-                "optimista de la construcción"),
+            # Los límites de renta variable por fondo: banda con piso y techo,
+            # no un techo suelto. Verificados en fuente primaria el 2026-09-19.
+            "exposicion_renta_variable_banda": {
+                p: list(b) for p, b in EXPOSICION_RENTA_VARIABLE_BANDA.items()},
+            "exposicion_renta_variable_fuente": FUENTE_EXPOSICION_RENTA_VARIABLE,
+            "prospectivo_rango_por_limites": {
+                p: list(b) for p, b in RENDIMIENTO_PROSPECTIVO_BANDA.items()},
+            "prospectivo_limites_verificados": (
+                "VERIFICADO el 2026-09-19 en fuente primaria (Decreto 2555 de "
+                "2010, artículo 2.6.12.1.4): los límites de renta variable por "
+                "fondo son una BANDA encadenada, no un techo suelto. "
+                "Conservador 0% a 20%, moderado 20% a 45%, mayor riesgo 45% a "
+                "70%: el mínimo de cada fondo es el máximo del anterior. Hasta "
+                "el 2026-09-19 el modelo metía a cada perfil con su TECHO, o "
+                "sea suponía que cada fondo usa su límite completo, cosa que "
+                "ningún fondo hace: era el borde optimista de la construcción. "
+                "Ahora entra el punto medio de la banda, que es el supuesto "
+                "neutral, y la banda completa viaja aquí para poder auditarla"),
             "que_significa_el_rango": ADVERTENCIA_RENDIMIENTO,
             # La contradicción que hubo, y como se resolvio. Se deja escrita
             # porque explica por que el supuesto prospectivo existe.

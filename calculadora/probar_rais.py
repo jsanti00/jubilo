@@ -257,23 +257,39 @@ print("=" * 64)
 # caso-01 moderado 2.666.551 y anticipada a los 58; caso-03 moderado 17.029.586 y
 # anticipada a los 35. Salían de suponer un 4% real en el perfil moderado, que
 # queda por encima del techo del rango observado por la Superfinanciera.
+#
+# SEGUNDO MOVIMIENTO A PROPÓSITO, EL 2026-09-19: los límites de renta variable
+# por tipo de fondo se verificaron en fuente primaria (Decreto 2555 de 2010,
+# art. 2.6.12.1.4) y resultaron ser una BANDA encadenada, no un techo suelto:
+# conservador 0% a 20%, moderado 20% a 45%, mayor riesgo 45% a 70%. El modelo
+# metía a cada perfil con su TECHO, que era el borde optimista declarado; ahora
+# entra con el PUNTO MEDIO de su banda (10%, 32,5% y 57,5%). El conservador no
+# se mueve, porque es el ancla. Los otros dos bajan un poco: el moderado pasa de
+# 2,895% a 2,8075% real y el mayor riesgo de 3,77% a 3,6825%, y de ahí sale la
+# caída de entre 1,9% y 3,0% en las cifras de abajo.
+# Los valores del 2026-07-27 al 2026-09-19, para la historia del proyecto:
+#   caso-01: moderado 2.090.605, mayor riesgo 2.532.935, deja de cotizar
+#            320.346, anticipada a los 61.
+#   caso-02: deja de cotizar 206.082 (las tres mesadas ya estaban en el piso).
+#   caso-03: moderado 13.200.055, mayor riesgo 16.136.877, deja de cotizar
+#            1.980.637, anticipada a los 36 (no se movió).
 ANTES_DE_LA_BANDA = {
     "caso-01-porvenir-rais.json": {
         "sexo": None,
-        "mesadas": {"conservador": 1_750_905, "moderado": 2_090_605,
-                    "mayor_riesgo": 2_532_935, "deja_de_cotizar": 320_346},
-        "anticipada": 61,
+        "mesadas": {"conservador": 1_750_905, "moderado": 2_051_542,
+                    "mayor_riesgo": 2_484_132, "deja_de_cotizar": 311_080},
+        "anticipada": 62,
     },
     "caso-02-skandia-rais.json": {
         "sexo": None,
         "mesadas": {"conservador": 1_750_905, "moderado": 1_750_905,
-                    "mayor_riesgo": 1_750_905, "deja_de_cotizar": 206_082},
+                    "mayor_riesgo": 1_750_905, "deja_de_cotizar": 200_036},
         "anticipada": None,
     },
     "caso-03-proteccion-rais.json": {
         "sexo": "M",
-        "mesadas": {"conservador": 10_870_263, "moderado": 13_200_055,
-                    "mayor_riesgo": 16_136_877, "deja_de_cotizar": 1_980_637},
+        "mesadas": {"conservador": 10_870_263, "moderado": 12_942_177,
+                    "mayor_riesgo": 15_811_432, "deja_de_cotizar": 1_920_896},
         "anticipada": 36,
     },
 }
@@ -481,6 +497,30 @@ for perfil in ds.RENDIMIENTO_REAL_PROSPECTIVO:
 revisar(abs(ds.RENDIMIENTO_REAL_PROSPECTIVO["conservador"]
             - ds.RENDIMIENTO_REAL_OBSERVADO_CENTRAL["conservador"]) < 1e-9,
         "el conservador prospectivo es el observado: ahí está el ancla")
+
+# --- 1 ter bis. Los límites de renta variable son una banda, no un techo ---
+# Verificados en el Decreto 2555 de 2010, art. 2.6.12.1.4, el 2026-09-19.
+# Estas cuatro comprobaciones son el candado: si alguien vuelve a modelar los
+# fondos como "hasta X%" a secas, o mete a un perfil con su techo, se pone rojo.
+print("\n  la banda legal de renta variable")
+revisar(ds.EXPOSICION_RENTA_VARIABLE_BANDA == {"conservador": (0.00, 0.20),
+                                               "moderado": (0.20, 0.45),
+                                               "mayor_riesgo": (0.45, 0.70)},
+        "las bandas de renta variable son las del artículo 2.6.12.1.4")
+revisar(ds.EXPOSICION_RENTA_VARIABLE_BANDA["moderado"][0]
+        == ds.EXPOSICION_RENTA_VARIABLE_BANDA["conservador"][1]
+        and ds.EXPOSICION_RENTA_VARIABLE_BANDA["mayor_riesgo"][0]
+        == ds.EXPOSICION_RENTA_VARIABLE_BANDA["moderado"][1],
+        "las bandas van encadenadas: el mínimo de un fondo es el máximo del anterior")
+for perfil, (piso, techo) in ds.EXPOSICION_RENTA_VARIABLE_BANDA.items():
+    revisar(abs(ds.EXPOSICION_RENTA_VARIABLE[perfil] - (piso + techo) / 2) < 1e-9,
+            f"{perfil}: la fórmula usa el punto medio de la banda, no el techo")
+    piso_r, techo_r = ds.RENDIMIENTO_PROSPECTIVO_BANDA[perfil]
+    revisar(piso_r <= ds.RENDIMIENTO_REAL_PROSPECTIVO[perfil] <= techo_r,
+            f"{perfil}: el prospectivo cae dentro del rango que permite la ley")
+revisar("2.6.12.1.4" in ds.FUENTE_EXPOSICION_RENTA_VARIABLE
+        and "ALTA" in ds.FUENTE_EXPOSICION_RENTA_VARIABLE,
+        "la banda cita el artículo exacto y declara confianza ALTA")
 revisar("Dimson" in ds.FUENTE_PRIMA_RENTA_VARIABLE
         and "otro mercado" in ds.FUENTE_PRIMA_RENTA_VARIABLE,
         "la prima cita su fuente y declara que se importa de otro mercado")
@@ -501,8 +541,28 @@ revisar("sigue siendo el dato" in bs["contradiccion_con_lo_observado"],
 revisar("LARGO PLAZO" in bs["prospectivo_advertencia"]
         and "no lo que los fondos rindieron" in bs["prospectivo_advertencia"],
         "la salida advierte que la proyección no usa el rendimiento histórico")
-revisar("[VERIFICAR]" in bs["prospectivo_eslabon_sin_verificar"],
-        "la salida marca el eslabón de la cadena que no se pudo verificar")
+# Hasta el 2026-09-19 aquí se comprobaba lo contrario: que la salida marcara
+# con [VERIFICAR] el eslabón de los límites de renta variable, porque no se
+# habían podido leer en la norma. Ya se leyeron (Decreto 2555, art. 2.6.12.1.4),
+# así que ahora lo que se vigila es que la salida traiga la banda verificada y
+# cite su fuente. Si alguien vuelve a poner un techo suelto, esto se pone rojo.
+revisar("VERIFICADO" in bs["prospectivo_limites_verificados"]
+        and "2.6.12.1.4" in bs["prospectivo_limites_verificados"],
+        "la salida declara que los límites se verificaron, y en qué artículo")
+revisar(bs["exposicion_renta_variable_banda"]["moderado"] == [0.20, 0.45]
+        and bs["exposicion_renta_variable_banda"]["mayor_riesgo"] == [0.45, 0.70]
+        and bs["exposicion_renta_variable_banda"]["conservador"] == [0.00, 0.20],
+        "la salida trae la banda de renta variable de cada fondo, no un techo")
+# Las bandas van ENCADENADAS: donde termina un fondo empieza el siguiente. Es
+# el numeral 2 del artículo, y es lo que impide que el moderado baje del 20%.
+revisar(bs["exposicion_renta_variable_banda"]["moderado"][0]
+        == bs["exposicion_renta_variable_banda"]["conservador"][1]
+        and bs["exposicion_renta_variable_banda"]["mayor_riesgo"][0]
+        == bs["exposicion_renta_variable_banda"]["moderado"][1],
+        "las bandas están encadenadas: el piso de un fondo es el techo del otro")
+revisar("2555" in bs["exposicion_renta_variable_fuente"]
+        and "ALTA" in bs["exposicion_renta_variable_fuente"],
+        "la banda cita el decreto del que sale y declara confianza ALTA")
 revisar(bs["observado_rangos"] and bs["prospectivo"],
         "la salida entrega las dos cosas: la evidencia y el supuesto")
 

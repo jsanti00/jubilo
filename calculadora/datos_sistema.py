@@ -753,21 +753,50 @@ MODERADO_NO_SUPERA_A_CONSERVADOR = (
 #
 #   Paso 3. EXPOSICIÓN ADICIONAL A RENTA VARIABLE de cada perfil respecto del
 #   conservador, que es lo que convierte la prima en puntos de rendimiento.
-#   [VERIFICAR] ESTE ES EL ESLABÓN DÉBIL DE LA CADENA. Los porcentajes de abajo
-#   son los límites que se citan habitualmente para el régimen de inversiones de
-#   los multifondos, y NO se verificaron en fuente primaria el 2026-07-28: el
-#   Gestor Normativo no entregó el articulado del Decreto 2555 y el documento
-#   técnico de la URF es un PDF del que no se puede extraer texto.
-#   QUÉ CAMBIARÍA SI SE VERIFICAN: los tres números prospectivos se recalculan
-#   solos, porque la fórmula está escrita abajo. Si el límite del moderado
-#   resultara más bajo, su prima baja y se acerca al conservador.
-#   SUPUESTO ADICIONAL, declarado: se asume que cada fondo usa su límite
-#   completo. Ningún fondo lo hace, así que estos números son el borde optimista
-#   de la construcción.
-EXPOSICION_RENTA_VARIABLE = {          # [VERIFICAR] límites del régimen
-    "conservador": 0.20,
-    "moderado": 0.45,
-    "mayor_riesgo": 0.70,
+#   VERIFICADO EN FUENTE PRIMARIA EL 2026-09-19 (antes estaba marcado
+#   [VERIFICAR]): Decreto 2555 de 2010, artículo 2.6.12.1.4, leído en el texto
+#   consolidado del Gestor Normativo. Las citas textuales quedaron en
+#   `fuentes-datos/multifondos-limites-renta-variable.md`.
+#
+#   QUÉ CAMBIÓ CON LA VERIFICACIÓN, y es lo importante: no es un techo suelto
+#   por fondo, es una BANDA con piso y techo, y las bandas van encadenadas. El
+#   numeral 1 del artículo fija los máximos (20 / 45 / 70) y el numeral 2 fija
+#   los mínimos: el mínimo del moderado no puede ser inferior al máximo del
+#   conservador (20%), y el mínimo del de mayor riesgo no puede ser inferior al
+#   máximo del moderado (45%). O sea que ningún fondo moderado puede tener menos
+#   del 20% en renta variable, y ninguno de mayor riesgo menos del 45%.
+#
+#   QUÉ SE CORRIGIÓ EN EL MODELO: antes cada perfil entraba a la fórmula con su
+#   TECHO (se asumía que cada fondo usaba su límite completo, cosa que ningún
+#   fondo hace, y el propio código lo declaraba como "el borde optimista de la
+#   construcción"). Ahora cada perfil entra con el PUNTO MEDIO de su banda, que
+#   es el supuesto neutral, y la banda completa queda publicada aparte para que
+#   se pueda auditar el rango de rendimiento que la ley permite en cada fondo.
+FUENTE_EXPOSICION_RENTA_VARIABLE = (
+    "Decreto 2555 de 2010, artículo 2.6.12.1.4 (sustituido por el Decreto 857 "
+    "de 2011, art. 1), numeral 1 (límites máximos: 20% conservador, 45% "
+    "moderado, 70% mayor riesgo) y numeral 2 (límites mínimos encadenados: el "
+    "mínimo de un fondo no puede ser inferior al máximo del fondo anterior). "
+    "Texto consolidado del Gestor Normativo de Función Pública, verificado el "
+    "2026-09-19. Confianza ALTA (fuente primaria). Aplica al portafolio "
+    "agregado, no por emisor: la concentración por emisor es el 10% del "
+    "artículo 2.6.12.1.12, que es un límite distinto"
+)
+
+# La banda legal de renta variable de cada fondo: (piso, techo). Encadenadas:
+# donde termina un fondo empieza el siguiente. El piso del conservador es 0
+# porque la norma no le fija mínimo: cada AFP lo define en su política.
+EXPOSICION_RENTA_VARIABLE_BANDA = {
+    "conservador": (0.00, 0.20),
+    "moderado": (0.20, 0.45),
+    "mayor_riesgo": (0.45, 0.70),
+}
+
+# El punto que usa la fórmula: el medio de cada banda. Es el supuesto neutral,
+# ni el borde optimista (el techo) ni el pesimista (el piso).
+EXPOSICION_RENTA_VARIABLE = {
+    perfil: round((piso + techo) / 2, 6)
+    for perfil, (piso, techo) in EXPOSICION_RENTA_VARIABLE_BANDA.items()
 }
 PRIMA_RENTA_VARIABLE_LARGO_PLAZO = 0.035
 FUENTE_PRIMA_RENTA_VARIABLE = (
@@ -789,6 +818,30 @@ RENDIMIENTO_REAL_PROSPECTIVO = {
            - EXPOSICION_RENTA_VARIABLE["conservador"])
         * PRIMA_RENTA_VARIABLE_LARGO_PLAZO, 6)
     for perfil in EXPOSICION_RENTA_VARIABLE
+}
+
+# La misma fórmula, pero aplicada a los dos bordes de la banda legal: cuánto
+# podría rendir cada fondo si se pegara a su piso de renta variable y cuánto si
+# se pegara a su techo. NO es la banda que se comunica (esa es la del factor de
+# conversión) ni la dispersión entre administradoras: es el rango que la ley
+# permite dentro de cada fondo, y sirve para auditar el supuesto.
+#
+# OJO, una distinción que importa y que este rango NO autoriza a hacer: estos
+# bordes acotan el rendimiento ESPERADO de largo plazo que implica la mezcla del
+# fondo, no el rendimiento REALIZADO. Un fondo moderado que cumple la ley
+# perfectamente puede rendir en un periodo por debajo de su piso de aquí, y de
+# hecho pasó: la SFC midió moderados en 2,27% real. Por eso este rango no se usa
+# para recortar la dispersión observada entre AFP.
+RENDIMIENTO_PROSPECTIVO_BANDA = {
+    perfil: (
+        round(RENDIMIENTO_REAL_OBSERVADO_CENTRAL["conservador"]
+              + (piso - EXPOSICION_RENTA_VARIABLE["conservador"])
+              * PRIMA_RENTA_VARIABLE_LARGO_PLAZO, 6),
+        round(RENDIMIENTO_REAL_OBSERVADO_CENTRAL["conservador"]
+              + (techo - EXPOSICION_RENTA_VARIABLE["conservador"])
+              * PRIMA_RENTA_VARIABLE_LARGO_PLAZO, 6),
+    )
+    for perfil, (piso, techo) in EXPOSICION_RENTA_VARIABLE_BANDA.items()
 }
 
 # Lo que usa la proyección. Es el PROSPECTIVO, por la decisión de Santiago.
