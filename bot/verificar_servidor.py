@@ -26,7 +26,10 @@ QUE COMPRUEBA, y en este orden:
      importar CON ESE interprete. La lista no esta escrita a mano: se lee de
      los propios archivos, asi que manana, cuando alguien importe algo nuevo y
      se le olvide instalarlo en el servidor, esto lo caza solo.
-  4. Que el JobQueue exista de verdad. Esta no es una comprobacion de import:
+  4. Que el JobQueue exista de verdad. De el cuelgan dos cosas, y desde el
+     2026-09-19 una de ellas es una promesa del aviso de privacidad: el
+     borrado automatico del documento original de la persona, y el cierre por
+     inactividad. Esta no es una comprobacion de import:
      `telegram.ext.JobQueue` se importa igual sin el extra. Hay que construir
      una Application y mirar si su `job_queue` es None, que es exactamente lo
      que fallo. No toca la red ni molesta al bot que esta corriendo: construir
@@ -184,10 +187,13 @@ prueba = (
 ok, salida = en_el_servidor(PYTHON_DEL_SERVICIO + " -c '" + prueba + "'")
 tiene_cola = ok and salida.strip().endswith("SI")
 revisar(tiene_cola,
-        "el JobQueue existe: el reporte de cierre y la pregunta de "
-        "satisfaccion van a salir",
-        "NO HAY JobQueue. El cierre por inactividad no va a funcionar y no va "
-        "a dar ningun error. Instala el extra: " + PYTHON_DEL_SERVICIO
+        "el JobQueue existe: el borrado del documento original, el reporte de "
+        "cierre y la pregunta de satisfaccion van a salir",
+        "NO HAY JobQueue. Sin el no funciona el BORRADO AUTOMATICO del "
+        "documento original (que el aviso de privacidad promete, o sea que es "
+        "un incumplimiento legal, no solo una funcion perdida) ni el cierre "
+        "por inactividad, y ninguno de los dos da error. Instala el extra: "
+        + PYTHON_DEL_SERVICIO
         + " -m pip install 'python-telegram-bot[job-queue]'")
 
 # --- 5. El servicio ----------------------------------------------------------

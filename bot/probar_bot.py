@@ -12,14 +12,23 @@
 # cuenta atras, que sin diagnostico no pase nada, que el chat de Telegram no
 # acabe en la bitacora, y que la pregunta vaya despues del reporte y no antes.
 #
+# Y desde el 2026-09-19 (segunda tanda), el borrado del documento original: que
+# quede programado apenas llega el archivo, que el temporizador lo borre de
+# verdad, que se borre antes de tiempo si ya se sacaron los numeros, que la
+# barrida del arranque limpie los huerfanos de un reinicio, y que cuando el
+# mecanismo no este disponible el bot GRITE en vez de callarse.
+#
 # Nada de eso toca internet ni el servidor: el temporizador y la API de Telegram
 # son de mentiras y estan definidos mas abajo.
 
 import asyncio
 import datetime
+import logging
+import os
 import sqlite3
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -350,6 +359,220 @@ with tempfile.TemporaryDirectory() as carpeta:
     # Escribio hace 10 minutos, asi que le faltan unos 20 de los 30.
     revisar(19 * 60 < pendientes[OTRO] < 21 * 60,
             "y se le respeta el tiempo que le faltaba, no se le reinicia entero")
+
+
+# ---------------------------------------------------------------------------
+# El borrado del documento original
+# ---------------------------------------------------------------------------
+#
+# El aviso de privacidad promete: "El archivo original lo borro apenas saco los
+# numeros". Estas comprobaciones son las que sostienen esa frase.
+
+
+class CazadorDeGritos(logging.Handler):
+    """Se engancha al log del bot y guarda lo que se dijo a nivel CRITICAL.
+
+    Existe para poder comprobar lo contrario de lo normal: que cuando el
+    borrado no se puede programar, el bot NO se queda callado.
+    """
+
+    def __init__(self):
+        super().__init__(level=logging.CRITICAL)
+        self.gritos = []
+
+    def emit(self, registro_de_log):
+        self.gritos.append(registro_de_log.getMessage())
+
+
+def carpeta_de_persona(raiz, chat_id):
+    """Arma una carpeta de usuario como la que crea el bot en el servidor."""
+    carpeta = raiz / str(chat_id)
+    (carpeta / ".claude").mkdir(parents=True)
+    (carpeta / "extracciones").mkdir()
+    (carpeta / "CLAUDE.md").write_text("Eres Júbilo", encoding="utf-8")
+    return carpeta
+
+
+def envejecer(ruta, horas):
+    """Le cambia la fecha a un archivo para que parezca de hace unas horas."""
+    cuando = time.time() - horas * 3600
+    os.utime(ruta, (cuando, cuando))
+
+
+print("\nEl borrado del documento original")
+
+with tempfile.TemporaryDirectory() as carpeta:
+    c = Path(carpeta)
+
+    bot.DB = c / "estado-borrado.db"
+    bot.USUARIOS = c / "usuarios"
+    bot.USUARIOS.mkdir()
+    bot.SAL = "sal-de-prueba"
+    bot.inicializar_db()
+
+    # El aviso al dueno no puede salir a internet en una prueba: se cambia por
+    # uno que solo apunta que lo llamaron.
+    avisos = []
+    bot.avisar_al_dueno = lambda texto, marca, es_prueba=False: avisos.append(texto)
+
+    CHAT = "444555666"
+    persona = carpeta_de_persona(bot.USUARIOS, CHAT)
+
+    # --- Que se reconoce como documento y que no --------------------------
+    documento = persona / "historia laboral.pdf"
+    documento.write_bytes(b"%PDF datos de la persona")
+
+    encontrados = bot.documentos_originales_de(CHAT)
+    revisar(encontrados == [documento],
+            "el documento que mandó la persona se reconoce como tal")
+    revisar(all(r.name != "CLAUDE.md" for r in encontrados),
+            "la nota interna CLAUDE.md no se confunde con un documento")
+
+    # --- Se programa el borrado apenas llega el archivo -------------------
+    cola = ColaFalsa()
+    programado = bot.programar_borrado_del_documento(cola, CHAT, documento)
+
+    revisar(programado, "el borrado queda programado en cuanto llega el archivo")
+    revisar(len(cola.trabajos) == 1, "y queda exactamente un temporizador de borrado")
+    revisar(cola.trabajos[0].cuando == bot.VIDA_MAXIMA_DEL_DOCUMENTO,
+            "programado a las 24 horas, que es el plazo máximo del documento")
+    revisar(bot.VIDA_MAXIMA_DEL_DOCUMENTO == 24 * 60 * 60,
+            "el plazo máximo son 24 horas, ni más ni menos")
+
+    # --- El temporizador borra el archivo de verdad -----------------------
+    telegram = BotFalso()
+    disparar(cola.trabajos[0], telegram)
+
+    revisar(not documento.exists(),
+            "cuando suena el temporizador, el documento desaparece del disco")
+    revisar(bot.documentos_originales_de(CHAT) == [],
+            "y no queda ningún archivo suelto en la carpeta de la persona")
+
+    # Que el temporizador suene dos veces (o sobre un archivo ya borrado) no
+    # puede tumbar nada.
+    disparar(TrabajoFalso(bot.borrar_documento_por_plazo, 0,
+                          {"chat_id": CHAT, "ruta": str(documento)},
+                          "x", cola), telegram)
+    revisar(True, "un temporizador rezagado sobre un archivo ya borrado no rompe nada")
+
+    # --- Apenas se sacan los numeros, se borra sin esperar las 24 horas ---
+    otro = persona / "historia-2.pdf"
+    otro.write_bytes(b"%PDF otra vez")
+
+    revisar(bot.borrar_si_ya_se_extrajeron_los_numeros(CHAT) == [],
+            "mientras no haya extracción, el documento se queda (se puede reintentar)")
+    revisar(otro.exists(), "y sigue en el disco")
+
+    # Júbilo guarda el JSON con los numeros: desde ese instante el original sobra.
+    (persona / "extracciones" / "caso.json").write_text('{"semanas": 1150}',
+                                                        encoding="utf-8")
+    borrados = bot.borrar_si_ya_se_extrajeron_los_numeros(CHAT)
+
+    revisar(borrados == [otro],
+            "apenas existe la extracción, el original se borra sin esperar el plazo")
+    revisar(not otro.exists(), "y ya no está en el disco")
+    revisar((persona / "extracciones" / "caso.json").exists(),
+            "la extracción con los números sí se conserva, que es lo que se usa")
+
+    # Una extraccion vieja no puede hacer creer que un documento nuevo ya se proceso.
+    recien_llegado = persona / "historia-3.pdf"
+    recien_llegado.write_bytes(b"%PDF nuevo")
+    envejecer(persona / "extracciones" / "caso.json", 5)
+    revisar(not bot.ya_se_sacaron_los_numeros(CHAT, recien_llegado),
+            "una extracción anterior no cuenta como los números de un documento nuevo")
+    recien_llegado.unlink()
+
+    # --- La barrida del arranque ------------------------------------------
+    # Un reinicio se lleva los temporizadores. La barrida es lo que salva a los
+    # archivos que quedaron huerfanos.
+    HUERFANO = "777888999"
+    EN_PLAZO = "121212121"
+    PROCESADO = "343434343"
+
+    viejo_de_persona = carpeta_de_persona(bot.USUARIOS, HUERFANO)
+    huerfano = viejo_de_persona / "vieja.pdf"
+    huerfano.write_bytes(b"%PDF de hace dos dias")
+    envejecer(huerfano, 48)
+
+    joven_de_persona = carpeta_de_persona(bot.USUARIOS, EN_PLAZO)
+    joven = joven_de_persona / "reciente.pdf"
+    joven.write_bytes(b"%PDF de hace dos horas")
+    envejecer(joven, 2)
+
+    lista_de_persona = carpeta_de_persona(bot.USUARIOS, PROCESADO)
+    ya_leido = lista_de_persona / "leida.pdf"
+    ya_leido.write_bytes(b"%PDF ya procesado")
+    envejecer(ya_leido, 3)
+    (lista_de_persona / "extracciones" / "caso.json").write_text("{}", encoding="utf-8")
+
+    borrados, pendientes = bot.barrer_documentos_al_arrancar()
+    en_espera = {chat: faltan for chat, _, faltan in pendientes}
+
+    revisar(not huerfano.exists(),
+            "al arrancar se borra el documento huérfano que pasó de 24 horas")
+    revisar(not ya_leido.exists(),
+            "y también el que ya tenía sus números extraídos, sin esperar el plazo")
+    revisar(joven.exists(),
+            "el que todavía está en plazo se conserva, para poder reintentar")
+    revisar(EN_PLAZO in en_espera and HUERFANO not in en_espera,
+            "solo el que está en plazo queda pendiente de temporizador")
+    revisar(21 * 3600 < en_espera[EN_PLAZO] < 22.5 * 3600,
+            "y se le respeta el tiempo que le quedaba, no se le reinician las 24 horas")
+
+    # --- Si el mecanismo no está, el bot GRITA -----------------------------
+    # Esto es el corazón de la prueba: el 2026-09-19 el JobQueue faltaba en el
+    # servidor y todo se devolvía en silencio. Aquí se comprueba lo contrario.
+    cazador = CazadorDeGritos()
+    bot.log.addHandler(cazador)
+    avisos.clear()
+
+    sin_cola = joven_de_persona / "sin-temporizador.pdf"
+    sin_cola.write_bytes(b"%PDF sin red de seguridad")
+    resultado = bot.programar_borrado_del_documento(None, EN_PLAZO, sin_cola)
+
+    revisar(resultado is False,
+            "sin temporizador, programar el borrado devuelve un no rotundo")
+    revisar(any("BORRADO" in g for g in cazador.gritos),
+            "y grita en el log a nivel CRITICAL, que es lo que no pasó el 19-sep")
+    revisar(len(avisos) == 1,
+            "además le manda un mensaje de Telegram al dueño")
+    revisar("borrar" in avisos[0].lower(),
+            "y ese mensaje dice que hay archivos sin borrar")
+
+    # El arranque sin temporizador tampoco puede pasar callado.
+    cazador.gritos.clear()
+    avisos.clear()
+    revisar(bot.avisar_si_no_hay_temporizador(None) is False,
+            "al arrancar sin JobQueue, el bot lo reconoce")
+    revisar(any("BORRADO AUTOMATICO" in g for g in cazador.gritos),
+            "grita que el borrado automático no va a funcionar")
+    revisar(len(avisos) == 1, "y avisa al dueño también en el arranque")
+
+    # Y con temporizador, ni grita ni molesta a nadie.
+    cazador.gritos.clear()
+    avisos.clear()
+    revisar(bot.avisar_si_no_hay_temporizador(ColaFalsa()) is True,
+            "con JobQueue, el arranque sigue normal")
+    revisar(cazador.gritos == [] and avisos == [],
+            "y no se grita ni se avisa cuando todo está bien")
+
+    bot.log.removeHandler(cazador)
+
+    # --- El chat de Telegram no entra a la bitácora por esta puerta --------
+    con = sqlite3.connect(bot.DB)
+    eventos = con.execute("SELECT seudonimo, evento, detalle FROM eventos").fetchall()
+    con.close()
+
+    nombres_de_evento = [e[1] for e in eventos]
+    revisar("documento_borrado" in nombres_de_evento,
+            "cada borrado queda como hito en la bitácora")
+    revisar("borrado_no_programado" in nombres_de_evento,
+            "y el fallo del mecanismo también, para verlo en el reporte")
+    revisar(CHAT not in str(eventos) and EN_PLAZO not in str(eventos),
+            "el chat de Telegram no aparece en los hitos del borrado")
+    detalles = [e[2] for e in eventos if e[1] == "documento_borrado"]
+    revisar(all(".pdf" not in (d or "") for d in detalles),
+            "ni el nombre del archivo, que suele traer la cédula de la persona")
 
 
 # ---------------------------------------------------------------------------

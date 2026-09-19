@@ -142,6 +142,62 @@ TEXTO_SATISFACCION = (
     "la lee el equipo que está construyendo Júbilo."
 )
 
+# --- El borrado del documento original --------------------------------------
+#
+# QUE PROMETE EL AVISO, palabra por palabra: "El archivo original lo borro
+# apenas saco los numeros". Hasta hoy eso no pasaba: el PDF que manda la
+# persona se quedaba en su carpeta para siempre. Esto lo arregla.
+#
+# CUANDO SE BORRA, y son dos momentos, no uno:
+#
+#   1. **Apenas se sacan los numeros.** En cuanto termina el turno en que
+#      Júbilo leyo el documento, se mira si ya existe la extraccion (el JSON con
+#      los numeros). Si existe, el original sobra y se borra en ese mismo
+#      instante. Este es el camino normal y es exactamente lo que dice el aviso.
+#
+#   2. **A las 24 horas, pase lo que pase.** Es la red de seguridad para cuando
+#      los numeros NO se sacaron: el documento venia ilegible, Claude se quedo
+#      sin cuota, el proceso se cayo a la mitad. En esos casos el aviso no
+#      aplica (nunca hubo numeros que sacar) y conservar el archivo unas horas
+#      permite reintentar en vez de pedirle a la persona que lo mande otra vez.
+#      Pasado ese plazo se borra igual, con numeros o sin ellos.
+#
+# POR QUE 24 HORAS Y NO MENOS: es el plazo en que una persona puede volver al
+# chat el dia siguiente y retomar sin reenviar nada. Por que no mas: pasado un
+# dia ya nadie retoma, y cada hora extra es un archivo con nombre y cedula
+# sentado en un disco sin que nadie lo necesite.
+#
+# HONESTIDAD CON EL AVISO: en el camino normal el codigo hace literalmente lo
+# que promete el texto. En el camino de fallo conserva hasta 24 horas un archivo
+# del que nunca se sacaron numeros, y eso el aviso no lo menciona. Queda
+# anotado aqui a proposito, para que no se pierda. Cambiar el texto del aviso
+# es decision de Santiago, no de quien escriba este codigo.
+HORAS_DE_VIDA_DEL_DOCUMENTO = 24
+
+# Lo mismo en segundos, que es lo que pide el temporizador de la libreria.
+VIDA_MAXIMA_DEL_DOCUMENTO = HORAS_DE_VIDA_DEL_DOCUMENTO * 60 * 60
+
+# Los archivos de la carpeta de la persona que NO son su documento. Todo lo
+# demas que este ahi suelto es algo que ella mando y por lo tanto se borra.
+NO_SON_DOCUMENTOS = {"CLAUDE.md"}
+
+# Donde se anota la hora del ultimo grito por el borrado, para no repetirlo cada
+# pocos minutos. Va en un archivo aparte del aviso de sesion vencida: son dos
+# problemas distintos y uno no puede tapar al otro.
+MARCA_AVISO_BORRADO = BASE / "ultimo-aviso-borrado.txt"
+
+# El texto que le llega al dueno si el borrado automatico no se pudo programar.
+# Es un incumplimiento del aviso de privacidad, asi que se dice con esas palabras.
+TEXTO_AVISO_SIN_BORRADO = (
+    "Júbilo: NO se pudo programar el borrado automático del documento de una "
+    "persona. Hay archivos con datos personales en /srv/jubilo/usuarios que "
+    "nadie va a borrar, y el aviso de privacidad promete borrarlos. "
+    "Casi seguro falta el extra del temporizador: "
+    "/srv/jubilo/venv/bin/python -m pip install 'python-telegram-bot[job-queue]'. "
+    "Mientras tanto, bórralos a mano."
+)
+
+
 # --- Los comandos que el bot contesta solo, sin molestar a Claude -----------
 #
 # Por que existe esto: el 2026-09-16 una persona creyo que el bot estaba caido y
@@ -623,54 +679,55 @@ def leer_token():
     return None
 
 
-def toca_avisar():
-    """Dice si ya pasaron las 6 horas desde el ultimo aviso.
+def toca_avisar(marca=None):
+    """Dice si ya pasaron las 6 horas desde el ultimo aviso de este tipo.
 
     Lee la hora guardada en el archivo de marca. Si el archivo no existe, o no
-    se puede leer, asumimos que nunca se ha avisado y decimos que si.
+    se puede leer, asumimos que nunca se ha avisado y decimos que si. Cada tipo
+    de aviso tiene su propio archivo, para que uno no tape al otro.
     """
+    archivo = MARCA_ULTIMO_AVISO if marca is None else marca
     try:
-        anterior = float(MARCA_ULTIMO_AVISO.read_text().strip())
+        anterior = float(archivo.read_text().strip())
     except (OSError, ValueError):
         return True
     return (time.time() - anterior) >= ESPERA_ENTRE_AVISOS
 
 
-def avisar_sesion_vencida(es_prueba=False):
-    """Le manda un mensaje de Telegram al dueno diciendole que hay que volver a entrar.
+def avisar_al_dueno(texto, marca, es_prueba=False):
+    """Le manda un mensaje de Telegram al dueno (Santiago) con un problema del bot.
 
-    Va entero dentro de un try: si el aviso falla, se anota en el log y ya. El
-    usuario que escribio igual recibe su respuesta; un aviso roto nunca puede
-    tumbar el bot.
+    Va entera dentro de un try: si el aviso falla, se anota en el log y ya. Un
+    aviso roto nunca puede tumbar el bot ni dejar sin respuesta a quien escribio.
 
-    Con es_prueba=True (solo cuando alguien lo dispara a mano para comprobar que
-    el aviso funciona) el mensaje llega marcado como prueba, se salta la espera
-    de las 6 horas y no anota la marca de tiempo, para no tapar un aviso de verdad.
+    `marca` es el archivo donde queda la hora de este tipo de aviso, para no
+    repetirlo antes de 6 horas. Con es_prueba=True el mensaje llega marcado como
+    prueba, se salta esa espera y no escribe la marca, para no tapar un aviso
+    de verdad que venga despues.
+
+    Devuelve True si el mensaje salio, False si no.
     """
     try:
         # Si ya se aviso hace poco, no se repite. Las pruebas no cuentan.
-        if not es_prueba and not toca_avisar():
-            return
+        if not es_prueba and not toca_avisar(marca):
+            return False
 
         token = leer_token()
         if not token:
-            log.error("no se pudo avisar: no hay token en config/.env")
-            return
+            log.error("no se pudo avisar al dueno: no hay token en config/.env")
+            return False
 
-        # El texto que va a leer el dueno en su chat. Si es una prueba, se avisa
-        # al principio para que nadie salga corriendo a arreglar algo que no pasa.
-        marca = "[PRUEBA, no es un fallo real] " if es_prueba else ""
-        texto = (
-            f"{marca}Júbilo: la sesión de Claude en el servidor se venció. "
-            "Entra por SSH y corre `claude` y luego `/login`. "
-            "Mientras tanto el bot le está diciendo a todos que no tiene capacidad."
-        )
+        # Si es una prueba se avisa al principio, para que nadie salga corriendo
+        # a arreglar algo que no esta pasando.
+        encabezado = "[PRUEBA, no es un fallo real] " if es_prueba else ""
 
         # La direccion de la API de Telegram para mandar un mensaje. Los datos
         # van en el cuerpo de la peticion, no en la direccion, para que el token
         # no termine escrito en ningun log de red.
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        cuerpo = urllib.parse.urlencode({"chat_id": ADMIN_CHAT_ID, "text": texto}).encode("utf-8")
+        cuerpo = urllib.parse.urlencode(
+            {"chat_id": ADMIN_CHAT_ID, "text": encabezado + texto}
+        ).encode("utf-8")
         peticion = urllib.request.Request(url, data=cuerpo)
 
         # Se manda y se espera maximo 10 segundos la respuesta.
@@ -680,11 +737,24 @@ def avisar_sesion_vencida(es_prueba=False):
         # Queda anotada la hora, para no volver a avisar en 6 horas. Una prueba
         # no la escribe: asi no bloquea el aviso real que venga despues.
         if not es_prueba:
-            MARCA_ULTIMO_AVISO.write_text(str(time.time()))
-        log.info("aviso de sesion vencida enviado al dueno (prueba=%s)", es_prueba)
+            marca.write_text(str(time.time()))
+        log.info("aviso enviado al dueno (prueba=%s)", es_prueba)
+        return True
     except Exception as e:
         # A proposito atrapamos cualquier error: el aviso es opcional.
-        log.error("no se pudo mandar el aviso de sesion vencida: %s", e)
+        log.error("no se pudo mandar el aviso al dueno: %s", e)
+        return False
+
+
+def avisar_sesion_vencida(es_prueba=False):
+    """Le dice al dueno que hay que volver a entrar con /login en el servidor."""
+    return avisar_al_dueno(
+        "Júbilo: la sesión de Claude en el servidor se venció. "
+        "Entra por SSH y corre `claude` y luego `/login`. "
+        "Mientras tanto el bot le está diciendo a todos que no tiene capacidad.",
+        MARCA_ULTIMO_AVISO,
+        es_prueba,
+    )
 
 
 # --- Llamar a Claude --------------------------------------------------------
@@ -871,6 +941,14 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
         descargable = await context.bot.get_file(archivo_tg.file_id)
         await descargable.download_to_drive(str(destino))
 
+        # El archivo acaba de tocar el disco, asi que lo primero que se hace,
+        # antes que cualquier otra cosa, es ponerle fecha de caducidad. Va aqui
+        # arriba a proposito: si se pusiera mas abajo, cualquier `return` de los
+        # que hay en medio (un reenvio, un error) dejaria el archivo sin
+        # temporizador y por lo tanto para siempre en el disco.
+        programar_borrado_del_documento(
+            getattr(context, "job_queue", None), chat_id, destino)
+
         # Si es exactamente el mismo archivo que ya mando antes, se le contesta
         # aqui y no se llama a Claude. La gente reenvia porque no esta segura de
         # que llego, y esa noche una sola persona reenvio ocho veces: siete
@@ -881,6 +959,9 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # documentos de los que llegaron.
         if archivo_repetido(chat_id, huella_de(destino)):
             anotar(chat_id, "archivo_repetido")
+            # La copia reenviada tampoco se queda: si de la primera ya se
+            # sacaron los numeros, esta sobra desde el segundo cero.
+            borrar_si_ya_se_extrajeron_los_numeros(chat_id)
             await mensaje.reply_text(
                 "Ese archivo ya lo tengo, no hace falta que lo reenvíes. "
                 "Estoy trabajando con él."
@@ -948,6 +1029,14 @@ async def al_recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Pase lo que pase, el turno queda anotado: tambien los que fallaron. Un
     # reporte que solo muestra lo que salio bien no sirve para arreglar nada.
     anotar_turno_del_mensaje(chat_id, texto, respuesta, tuvo_adjunto, espera_cola_ms, metricas)
+
+    # El turno en que llego el documento ya termino. Si Júbilo alcanzo a sacar
+    # los numeros, el original se borra ya mismo, que es lo que promete el
+    # aviso. Si no los saco (documento ilegible, error del modelo), el archivo
+    # se queda hasta que suene su temporizador de 24 horas y mientras tanto se
+    # puede reintentar.
+    if tuvo_adjunto:
+        borrar_si_ya_se_extrajeron_los_numeros(chat_id)
 
     if respuesta is None:
         await mensaje.reply_text(
@@ -1027,6 +1116,192 @@ def _extracciones_de(chat_id):
     if not carpeta.is_dir():
         return []
     return sorted(carpeta.glob("*.json"), key=lambda r: r.stat().st_mtime, reverse=True)
+
+
+# --- Borrar el documento original de la persona -----------------------------
+#
+# La explicacion de por que se borra cuando se borra esta arriba, junto a la
+# constante HORAS_DE_VIDA_DEL_DOCUMENTO. Aqui esta la maquinaria.
+
+def documentos_originales_de(chat_id):
+    """Los archivos que esta persona mando y que siguen en el disco.
+
+    Son los que estan sueltos en su carpeta. Lo demas que hay ahi no es suyo:
+    `CLAUDE.md` es la nota que le dejamos a Claude, y las dos subcarpetas
+    (`.claude` y `extracciones`) no son archivos, asi que se caen solas del
+    filtro. Cualquier otra cosa suelta ahi llego por Telegram y se borra.
+    """
+    carpeta = USUARIOS / str(chat_id)
+    if not carpeta.is_dir():
+        return []
+    return [r for r in sorted(carpeta.iterdir())
+            if r.is_file()
+            and r.name not in NO_SON_DOCUMENTOS
+            and not r.name.startswith(".")]
+
+
+def ya_se_sacaron_los_numeros(chat_id, documento):
+    """Dice si de este documento ya salio la extraccion con los numeros.
+
+    La prueba es sencilla: hay un JSON de extraccion guardado DESPUES de que
+    llego el archivo. Se compara la hora de cada archivo, no el nombre, porque
+    el nombre del JSON lo pone Júbilo y no es fijo. Se mira que sea posterior y
+    no solo que exista, para que la extraccion de un documento viejo no haga
+    creer que el que acaba de llegar ya se proceso.
+    """
+    try:
+        llegada = documento.stat().st_mtime
+    except OSError:
+        return False
+    for extraccion in _extracciones_de(chat_id):
+        try:
+            if extraccion.stat().st_mtime >= llegada:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def borrar_documento(chat_id, documento, motivo):
+    """Borra un documento del disco y lo deja anotado. Devuelve True si se borro.
+
+    En la bitacora solo entra el motivo, nunca el nombre del archivo: el nombre
+    de un PDF de historia laboral suele traer la cedula o el nombre de la persona.
+    """
+    try:
+        documento.unlink(missing_ok=True)
+    except OSError as e:
+        log.error("no se pudo borrar el documento original: %s", e)
+        return False
+    log.info("documento original borrado (motivo: %s)", motivo)
+    anotar(chat_id, "documento_borrado", motivo)
+    return True
+
+
+def borrar_si_ya_se_extrajeron_los_numeros(chat_id):
+    """El camino normal: borra los documentos de los que ya se sacaron los numeros.
+
+    Se llama en cuanto termina el turno en que Júbilo leyo el archivo. Si la
+    extraccion existe, el original ya no hace falta para nada y se va. Esto es
+    lo que el aviso de privacidad promete literalmente.
+
+    Devuelve la lista de lo que borro (vacia si no habia nada que borrar).
+    """
+    borrados = []
+    for documento in documentos_originales_de(chat_id):
+        if ya_se_sacaron_los_numeros(chat_id, documento):
+            if borrar_documento(chat_id, documento, "extraccion"):
+                borrados.append(documento)
+    return borrados
+
+
+async def borrar_documento_por_plazo(context):
+    """La red de seguridad: borra el documento cuando se le acaba el plazo.
+
+    La dispara el temporizador a las 24 horas de que llego el archivo. Para
+    entonces, lo normal es que ya no exista (se borro al sacar los numeros) y
+    esta funcion no encuentre nada, que es justo lo que se espera. Cuando si
+    encuentra algo, es porque la extraccion nunca se logro.
+    """
+    datos = getattr(context.job, "data", None) or {}
+    chat_id = datos.get("chat_id")
+    ruta = datos.get("ruta")
+    try:
+        documento = pathlib.Path(ruta)
+        if documento.exists():
+            borrar_documento(chat_id, documento, "plazo")
+    except Exception as e:
+        log.error("no se pudo borrar por plazo el documento de %s: %s", chat_id, e)
+
+
+def programar_borrado_del_documento(job_queue, chat_id, documento, segundos=None):
+    """Pone el temporizador que borra este documento pase lo que pase.
+
+    Se llama en cuanto el archivo toca el disco, antes de hacer nada con el.
+
+    **AQUI NO SE PUEDE FALLAR EN SILENCIO, y por eso esta funcion es ruidosa.**
+    Si no hay temporizador (el caso real del 2026-09-19: al servidor le faltaba
+    el extra `job-queue` y `app.job_queue` valia None), quedarse callado
+    significaria dejar en el disco un archivo con el nombre y la cedula de una
+    persona que prometimos borrar, sin que nadie se entere nunca. Asi que
+    cuando eso pasa: se grita en el log con nivel CRITICAL, se le manda un
+    mensaje de Telegram al dueno, y queda el hito en la bitacora.
+
+    Devuelve True si el borrado quedo programado y False si no.
+    """
+    if job_queue is None:
+        log.critical(
+            "NO SE PROGRAMO EL BORRADO del documento de %s: no hay JobQueue. "
+            "Queda un archivo con datos personales en el disco y el aviso de "
+            "privacidad promete borrarlo. Falta el extra en el servidor: "
+            "pip install 'python-telegram-bot[job-queue]'", chat_id)
+        anotar(chat_id, "borrado_no_programado", "sin JobQueue")
+        avisar_al_dueno(TEXTO_AVISO_SIN_BORRADO, MARCA_AVISO_BORRADO)
+        return False
+
+    try:
+        job_queue.run_once(
+            borrar_documento_por_plazo,
+            VIDA_MAXIMA_DEL_DOCUMENTO if segundos is None else segundos,
+            data={"chat_id": chat_id, "ruta": str(documento)},
+            name=f"borrado-{chat_id}-{documento.name}",
+        )
+        return True
+    except Exception as e:
+        # Mismo criterio que arriba: esto no se traga, se grita.
+        log.critical("NO SE PROGRAMO EL BORRADO del documento de %s: %s", chat_id, e)
+        anotar(chat_id, "borrado_no_programado", str(e)[:200])
+        avisar_al_dueno(TEXTO_AVISO_SIN_BORRADO, MARCA_AVISO_BORRADO)
+        return False
+
+
+def barrer_documentos_al_arrancar():
+    """Limpia los documentos que quedaron huerfanos mientras el bot estuvo caido.
+
+    Hace falta porque los temporizadores viven en memoria: un reinicio (y hay
+    uno en cada despliegue) se los lleva por delante, y sin esto un archivo que
+    tenia su borrado programado se quedaria en el disco para siempre.
+
+    Recorre las carpetas de todas las personas y con cada documento hace una de
+    tres cosas:
+      - Si ya se le sacaron los numeros, lo borra ahora mismo.
+      - Si no, y ya paso su plazo de 24 horas, tambien lo borra.
+      - Si no, y todavia esta dentro del plazo, lo deja y lo devuelve en la
+        lista de pendientes para que `main` le vuelva a poner su temporizador
+        con el tiempo que le quedaba.
+
+    Devuelve (borrados, pendientes), donde pendientes son tercias
+    (chat_id, ruta, segundos_que_faltan).
+    """
+    borrados = []
+    pendientes = []
+    try:
+        if not USUARIOS.is_dir():
+            return borrados, pendientes
+
+        for carpeta in sorted(USUARIOS.iterdir()):
+            if not carpeta.is_dir():
+                continue
+            chat_id = carpeta.name
+            for documento in documentos_originales_de(chat_id):
+                if ya_se_sacaron_los_numeros(chat_id, documento):
+                    if borrar_documento(chat_id, documento, "extraccion"):
+                        borrados.append(documento)
+                    continue
+
+                # Cuanto lleva el archivo en el disco. Si ya paso el plazo, se va.
+                edad = time.time() - documento.stat().st_mtime
+                if edad >= VIDA_MAXIMA_DEL_DOCUMENTO:
+                    if borrar_documento(chat_id, documento, "plazo"):
+                        borrados.append(documento)
+                    continue
+
+                # Todavia esta en plazo: se deja, pero con su temporizador nuevo.
+                pendientes.append((chat_id, documento,
+                                   VIDA_MAXIMA_DEL_DOCUMENTO - edad))
+    except Exception as e:
+        log.error("fallo la barrida de documentos del arranque: %s", e)
+    return borrados, pendientes
 
 
 def buscar_diagnostico(chat_id):
@@ -1191,15 +1466,24 @@ def avisar_si_no_hay_temporizador(job_queue):
     Eso paso en el despliegue del 2026-09-19. Se detecto por casualidad, al
     leer el log. Con esto no vuelve a hacer falta la casualidad.
 
+    Desde que el borrado del documento cuelga tambien del temporizador, esto
+    dejo de ser una funcion que se pierde y paso a ser un incumplimiento del
+    aviso de privacidad. Por eso el grito subio a CRITICAL y ademas sale del
+    servidor: le llega un mensaje de Telegram al dueno.
+
     Devuelve True si hay temporizador, False si no.
     """
     if job_queue is not None:
         return True
-    log.error(
-        "NO HAY JobQueue: el reporte de cierre y la pregunta de satisfaccion "
-        "NO van a salir. Falta el extra en el servidor: "
+    log.critical(
+        "NO HAY JobQueue. Dos cosas dejan de funcionar sin dar ningun error: "
+        "(1) el BORRADO AUTOMATICO del documento original, que el aviso de "
+        "privacidad promete, o sea que van a quedar archivos con datos "
+        "personales en el disco; y (2) el reporte de cierre con su pregunta de "
+        "satisfaccion. Falta el extra en el servidor: "
         "pip install 'python-telegram-bot[job-queue]'. El resto del bot "
         "funciona normal.")
+    avisar_al_dueno(TEXTO_AVISO_SIN_BORRADO, MARCA_AVISO_BORRADO)
     return False
 
 
@@ -1329,6 +1613,22 @@ def main():
             programar_cierre(app.job_queue, chat_id, None, segundos=faltan)
             log.info("cierre pendiente retomado para %s, en %.0f s",
                      chat_id, faltan)
+
+    # La barrida de documentos huerfanos. Un reinicio se lleva los
+    # temporizadores de borrado igual que los de cierre, asi que al arrancar se
+    # revisa el disco entero: lo que ya se proceso o ya cumplio su plazo se
+    # borra aqui mismo, y a lo que todavia esta en plazo se le vuelve a poner
+    # su temporizador con el tiempo que le quedaba.
+    #
+    # La barrida corre SIEMPRE, haya temporizador o no: es la unica pieza del
+    # borrado que no depende del JobQueue, y si el JobQueue falta es la unica
+    # que va a limpiar algo.
+    borrados, pendientes = barrer_documentos_al_arrancar()
+    log.info("barrida de arranque: %d documento(s) borrado(s), %d en plazo",
+             len(borrados), len(pendientes))
+    for chat_id, documento, faltan in pendientes:
+        programar_borrado_del_documento(app.job_queue, chat_id, documento,
+                                        segundos=faltan)
 
     log.info("Júbilo arrancó")
     app.run_polling()
