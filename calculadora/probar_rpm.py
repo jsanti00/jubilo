@@ -434,6 +434,90 @@ revisar(dc["ibl"] == dc["ibl_10_anios"],
         "Control: la mesada se liquida con ese, no con el de toda la vida")
 
 
+# ---------------------------------------------------------------------------
+# REGRESIÓN: el caso femenino del set dorado (caso-04 corrido como mujer)
+# ---------------------------------------------------------------------------
+# Por qué existe: hasta aquí el set dorado se corría como mujer en UN solo sitio
+# (la lista PRUEBAS del comienzo de este archivo), pero solo IMPRIMÍA el
+# diagnóstico. Ninguna cifra quedaba fijada, así que un cambio que rompiera la
+# mitad femenina del modelo no hacía fallar nada. Esta sección clava las cifras.
+#
+# El sexo no viene en el documento de Colpensiones: lo responde la persona. Aquí
+# se corre la MISMA historia laboral con los dos sexos, y la comparación es la
+# prueba de que el sexo sí atraviesa todo el cálculo de punta a punta.
+#
+# LAS DOS REGLAS QUE MUEVE EL SEXO, verificadas en este caso:
+#   1. Edad legal: mujer 57, hombre 62. Nacida el 18/05/1978, cumple 57 el
+#      18/05/2035 y 62 el 18/05/2040. Son cinco años de pensión de diferencia.
+#   2. Semanas exigidas: al hombre siempre 1.300. A la mujer le bajan 25 por año
+#      desde las 1.250 de 2026 (Sentencia C-197), así que en 2035 son 1.025.
+#      Eso le da más bloques de 50 semanas extra y, con ellos, más tasa.
+#
+# Las cifras esperadas de abajo salen de correr esta misma calculadora el día
+# que se fijaron. NO son una liquidación a mano: son un ancla de regresión. Si
+# alguna se mueve, hay que entender POR QUÉ antes de actualizarla.
+
+print()
+print("=" * 70)
+print("REGRESIÓN: el caso femenino real del set dorado (caso-04)")
+print("=" * 70)
+
+caso_04 = json.loads(
+    (CASOS / "caso-04-colpensiones-rpm.json").read_text(encoding="utf-8"))
+
+# --- La mujer: es como se corre el caso en la lista PRUEBAS de arriba ---
+df = diagnosticar(caso_04, "F", FECHA)
+sf = df["escenario_sigue_cotizando"]
+nf = df["escenario_deja_de_cotizar"]
+
+revisar(df["semanas_hoy"] == 1478.43 == df["semanas_documento"],
+        f"Semanas: {df['semanas_hoy']} y cuadran con el documento")
+revisar(df["requisito_semanas_hoy"] == 1250,
+        f"Requisito de la mujer en 2026: {df['requisito_semanas_hoy']} (C-197)")
+revisar(df["fecha_cumple_edad"] == "2035-05-18",
+        f"Cumple los 57 el {df['fecha_cumple_edad']}")
+revisar(df["fecha_pension_estimada"] == "2035-05-18",
+        f"Se pensiona el {df['fecha_pension_estimada']}: ya tiene las semanas, "
+        f"manda la edad")
+
+# Escenario en que sigue cotizando hasta pensionarse
+revisar(sf["requisito_semanas"] == 1025,
+        f"Requisito del año en que se pensiona (2035): {sf['requisito_semanas']}")
+revisar(sf["ibl_usado"] == "toda_la_vida",
+        "Le gana el IBL de toda la vida laboral (art. 21)")
+revisar(sf["ibl"] == 2_711_151, f"IBL con el que se liquida: {pesos(sf['ibl'])}")
+revisar(sf["bloques_extra"] == 18,
+        f"Bloques de 50 semanas sobre las 1.025: {sf['bloques_extra']}")
+revisar(sf["tasa_pct"] == 80.0,
+        f"Tasa recortada al techo del 80% (base {sf['tasa_base_pct']}% + bloques)")
+revisar(sf["mesada"] == 2_168_920, f"MESADA si sigue cotizando: {pesos(sf['mesada'])}")
+
+# Escenario en que deja de cotizar hoy: aquí manda el IBL de los 10 años
+revisar(nf["ibl_usado"] == "10_anios",
+        "Si deja de cotizar hoy, el mayor pasa a ser el IBL de 10 años")
+revisar(nf["mesada"] == 2_842_996,
+        f"MESADA si deja de cotizar: {pesos(nf['mesada'])}")
+
+# --- El hombre: la misma historia, el otro sexo. Es el control ---
+# Sirve para dos cosas: comprobar que el sexo de verdad cambia el resultado
+# (si las dos cifras fueran iguales, el parámetro no estaría llegando al
+# cálculo) y dejar medido cuánto lo cambia.
+dm4 = diagnosticar(caso_04, "M", FECHA)
+sm4 = dm4["escenario_sigue_cotizando"]
+
+revisar(dm4["requisito_semanas_hoy"] == 1300,
+        f"Control hombre: le exigen {dm4['requisito_semanas_hoy']} semanas fijas")
+revisar(dm4["fecha_cumple_edad"] == "2040-05-18",
+        f"Control hombre: cumple los 62 el {dm4['fecha_cumple_edad']}, "
+        f"cinco años después")
+revisar(sm4["requisito_semanas"] == 1300,
+        "Control hombre: su requisito no baja con el año, el de ella sí")
+revisar(sm4["mesada"] == 2_078_724,
+        f"Control hombre: mesada {pesos(sm4['mesada'])}")
+revisar(sf["mesada"] != sm4["mesada"],
+        f"El sexo SÍ mueve la mesada: {pesos(sf['mesada'] - sm4['mesada'])} "
+        f"más para ella, y cinco años antes")
+
 print()
 if fallos:
     print(f"RESULTADO: {len(fallos)} FALLAS en las regresiones de RPM")
@@ -441,4 +525,5 @@ if fallos:
         print(f"  - {f}")
     sys.exit(1)
 print("RESULTADO: regresiones de RPM en verde (piso del 55%, fecha de semanas "
-      "con el requisito del año, tope de 25 SMLMV al IBC, IBL mayor de los dos)")
+      "con el requisito del año, tope de 25 SMLMV al IBC, IBL mayor de los dos, "
+      "caso femenino del set dorado)")

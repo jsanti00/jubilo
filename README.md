@@ -1,8 +1,12 @@
 # Júbilo
 
 Un asesor pensional para Colombia. Recibe la historia laboral de una persona y le
-dice, con números y no con generalidades, qué pensión le espera, qué le falta y
-qué decisiones todavía puede tomar.
+dice, con números y no con generalidades, qué pensión le espera (o si no va a
+alcanzar una), qué le falta y qué decisiones todavía puede tomar.
+
+Es para quien **todavía no se ha pensionado**. A quien ya tiene su pensión
+reconocida el agente se lo dice y no le corre el diagnóstico: ese caso está
+fuera del alcance del producto.
 
 Nació como una herramienta para que mis papás entendieran su propia pensión.
 

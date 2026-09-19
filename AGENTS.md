@@ -1,6 +1,8 @@
 # AGENTS.md: repo de Júbilo
 
-> **Última actualización:** 2026-09-19. Cambio: se construyó el **banco de palancas** (`analisis/palancas-por-construir.md`). Lo nuevo: `calculadora/palancas.py` (elige, cuantifica, ordena y combina las palancas de cada persona), `calculadora/anomalias.py` (detecta lo que hay que verificar en la historia laboral), el parámetro `meses_aplazamiento` en `rpm.py` y `rais.py`, la tabla de rendimiento por AFP y fondo en `datos_sistema.py`, y las secciones 4 y 5 del reporte conectadas a todo eso. **Nada de eso está desplegado todavía.** Antes: 2026-09-18, se ejecutaron las mejoras del primer feedback real: la carpeta `tramites/`, la prueba `bot/probar_bot.py`, la convergencia de multifondos y el aviso de privacidad en versión 1.2. Antes: 2026-09-16, el bot se desplegó en producción y se compartió con los primeros usuarios de prueba.
+> **Última actualización:** 2026-09-19 (segunda entrada del día). Cambio: **el usuario ya pensionado quedó fuera del alcance del producto y se borró todo lo que lo contemplaba.** Lo que se movió: **el mensaje de bienvenida se dejó como estaba** (Santiago lo decidió así: se probó reescribirlo y se revirtió, el aviso sigue en la **versión 1.2**); el `system-prompt.md` trae ahora el mensaje de cierre palabra por palabra; y la matriz de cobertura perdió sus 16 celdas PEN, así que el universo pasó de 64 a **48 celdas**. **Ojo con la distinción:** "ya pensionado" está fuera; "no alcanza a pensionarse" sigue dentro y es un usuario al que hay que decirle la verdad. Nada de esto está desplegado todavía.
+>
+> **Antes:** 2026-09-19. Cambio: se construyó el **banco de palancas** (`analisis/palancas-por-construir.md`). Lo nuevo: `calculadora/palancas.py` (elige, cuantifica, ordena y combina las palancas de cada persona), `calculadora/anomalias.py` (detecta lo que hay que verificar en la historia laboral), el parámetro `meses_aplazamiento` en `rpm.py` y `rais.py`, la tabla de rendimiento por AFP y fondo en `datos_sistema.py`, y las secciones 4 y 5 del reporte conectadas a todo eso. **Nada de eso está desplegado todavía.** Antes: 2026-09-18, se ejecutaron las mejoras del primer feedback real: la carpeta `tramites/`, la prueba `bot/probar_bot.py`, la convergencia de multifondos y el aviso de privacidad en versión 1.2. Antes: 2026-09-16, el bot se desplegó en producción y se compartió con los primeros usuarios de prueba.
 
 Júbilo es un asesor pensional para Colombia en Telegram: **la IA conversa y el código fijo hace los números.** Ninguna cifra la calcula el modelo.
 
@@ -53,7 +55,7 @@ Si alguien pide que le borren lo suyo, `registro.borrar_persona(DB, seudonimo)` 
 
 **Nunca pruebes un cambio mandándolo al bot de Telegram de producción.** Hay tres niveles y con esos basta.
 
-**Cuántas suites hay, sin tener que creerle a este archivo.** Hoy son **17**: trece en `calculadora/`, dos en `bot/`, una en `reporte/` y una en `tramites/`. Ese número crece, así que en vez de fiarte de él, cuéntalas y córrelas todas de una:
+**Cuántas suites hay, sin tener que creerle a este archivo.** Hoy son **18**: catorce en `calculadora/`, dos en `bot/`, una en `reporte/` y una en `tramites/`. Ese número crece, así que en vez de fiarte de él, cuéntalas y córrelas todas de una:
 
 ```bash
 cd ~/Developer/jubilo
@@ -65,7 +67,7 @@ done
 Todas tienen que decir OK. Ninguna necesita servidor ni internet.
 
 
-**Nivel 1, la calculadora: las pruebas automáticas.** Todo cambio en `calculadora/` se valida corriendo las **trece** suites (eran once hasta el 2026-09-19; se sumaron `probar_palancas.py` y `probar_anomalias.py`). Tarda segundos y no toca el servidor:
+**Nivel 1, la calculadora: las pruebas automáticas.** Todo cambio en `calculadora/` se valida corriendo las **catorce** suites (eran once hasta el 2026-09-19; se sumaron `probar_palancas.py`, `probar_anomalias.py` y `probar_extraer.py`). Tarda segundos y no toca el servidor:
 
 ```bash
 cd calculadora
@@ -144,13 +146,14 @@ En ambos casos el bot queda caído unos 6 segundos. Si el proceso muere, systemd
 
 **Lo consumen dos sitios y ninguno redacta nada por su cuenta:** el reporte (`reporte/armar_reporte.py`, secciones 4 y 5) y el agente en conversación (ver la sección "Las palancas salen de `palancas.py`" del `system-prompt.md`).
 
-Cinco reglas que este módulo impone y que no se pueden romper al tocarlo:
+Seis reglas que este módulo impone y que no se pueden romper al tocarlo:
 
 - **El número nunca se estima.** Cada palanca se cuantifica volviendo a correr la calculadora con el supuesto movido.
 - **Una palanca puede salir negativa, y entonces no se ofrece.** En el RPM, aplazar la pensión BAJA la mesada cuando la tasa ya está en su tope y el IBL que manda es el de toda la vida (Ley 100 art. 21).
 - **El traslado de régimen no entra al ranking por impacto.** Viaja en su propia llave. Ordenarlo por impacto equivale a recomendarlo, y el traslado exige por ley doble asesoría.
 - **La palanca de administradora va siempre debajo de la de portafolio.** El portafolio pesa entre dos y diez veces más; presentarlas iguales invita a optimizar la pequeña.
-- **Si la persona queda en la garantía de pensión mínima, ninguna palanca le mueve la mesada.** El módulo levanta `aviso_de_segmento` y eso manda sobre todo lo demás: para ella lo que está en juego no es cuánto recibe, es calificar.
+- **Si la persona está en el PISO de la garantía de pensión mínima, ninguna palanca le mueve la mesada.** El módulo levanta `aviso_de_segmento` y eso manda sobre todo lo demás: para ella lo que está en juego no es cuánto recibe, es calificar. **Ojo con la distinción (corregida el 2026-09-19):** la etiqueta `garantia_pension_minima` tapa dos situaciones distintas y el aviso ya no las colapsa. Si su capital financia menos de un salario mínimo, está en el piso (`tipo: garantia_pension_minima`) y sus palancas valen cero. Si financia más que el mínimo pero no llega al umbral del 110%, el Estado no le completa nada y sus palancas SÍ le suben la mesada: ahí el aviso es el del borde (`tipo: riesgo_de_caer_en_la_garantia_minima`).
+- **A quien está en el piso se le cuantifica el valle.** `aviso_de_segmento["valle"]` trae los dos caminos con número: aceptar el mínimo (cuánta plata botaría aportando dentro del valle, donde el retorno marginal es cero) y saltar el valle (cuánto tendría que aportar al mes para superar el umbral con margen). Los dos salen de correr la calculadora por bisección, nunca de estimar, y cuando el salto excede lo razonable frente a su ingreso se dice con el número en la mano en vez de ofrecer un camino falso.
 
 `calculadora/anomalias.py` es su compañero: revisa la historia laboral y marca lo que hay que verificar (siete tipos, cada uno con su nivel de confianza). **Nunca afirma que hay un error**, porque un falso positivo aquí destruye la confianza: dice qué ir a preguntarle a la administradora.
 
