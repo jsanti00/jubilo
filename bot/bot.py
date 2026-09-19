@@ -1178,6 +1178,31 @@ async def mandar_reporte_de_cierre(context):
                 log.error("no se pudo borrar el reporte temporal %s: %s", destino, e)
 
 
+def avisar_si_no_hay_temporizador(job_queue):
+    """Grita en el log si el bot arranco sin JobQueue, en vez de callarse.
+
+    POR QUE EXISTE. python-telegram-bot trae el JobQueue en un extra aparte
+    (`pip install "python-telegram-bot[job-queue]"`). Si no esta instalado,
+    `app.job_queue` es None, la libreria suelta un warning que se pierde entre
+    el ruido del arranque, y TODO el cierre por inactividad deja de funcionar
+    sin un solo error. El reporte no se manda, la pregunta de satisfaccion no
+    se hace, y desde fuera el bot se ve perfectamente sano.
+
+    Eso paso en el despliegue del 2026-09-19. Se detecto por casualidad, al
+    leer el log. Con esto no vuelve a hacer falta la casualidad.
+
+    Devuelve True si hay temporizador, False si no.
+    """
+    if job_queue is not None:
+        return True
+    log.error(
+        "NO HAY JobQueue: el reporte de cierre y la pregunta de satisfaccion "
+        "NO van a salir. Falta el extra en el servidor: "
+        "pip install 'python-telegram-bot[job-queue]'. El resto del bot "
+        "funciona normal.")
+    return False
+
+
 def programar_cierre(job_queue, chat_id, nombre=None, segundos=None):
     """Pone (o reinicia) el temporizador del cierre de esta conversacion.
 
@@ -1192,6 +1217,13 @@ def programar_cierre(job_queue, chat_id, nombre=None, segundos=None):
     mas. Si el bot se reinicia, el nombre se pierde y el reporte sale sin el.
     """
     if job_queue is None:            # en las pruebas no hay temporizador de verdad
+        # OJO: en produccion esto NO deberia pasar nunca, y si pasa la funcion
+        # entera queda muerta sin que nadie se entere. Ocurrio de verdad el
+        # 2026-09-19: el servidor tenia python-telegram-bot sin el extra
+        # `job-queue`, asi que `app.job_queue` era None, cada llamada se
+        # devolvia en silencio y el log seguia diciendo "cierre pendiente
+        # retomado" como si todo estuviera bien. Quien avisa ahora es
+        # `avisar_si_no_hay_temporizador()`, que corre al arrancar.
         return
     try:
         # Si ya se le mando, no hay nada que programar.
@@ -1283,12 +1315,20 @@ def main():
               | filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE)
     app.add_handler(MessageHandler(medios, al_recibir_mensaje))
 
+    # Primero se comprueba que exista el temporizador. Si no existe, no se
+    # anuncia en el log que se retoma nada: decir "cierre pendiente retomado"
+    # cuando no se retomo nada es peor que no decir nada, porque deja el log
+    # mintiendo y el problema tarda dias en salir.
+    hay_temporizador = avisar_si_no_hay_temporizador(app.job_queue)
+
     # Los temporizadores de cierre viven en memoria y el reinicio se los llevo.
     # Aqui se vuelven a poner los de quien quedo callado y sin reporte, con el
     # tiempo que le faltaba. Sin nombre: ese solo existia en la memoria anterior.
-    for chat_id, faltan in conversaciones_para_retomar():
-        programar_cierre(app.job_queue, chat_id, None, segundos=faltan)
-        log.info("cierre pendiente retomado para %s, en %.0f s", chat_id, faltan)
+    if hay_temporizador:
+        for chat_id, faltan in conversaciones_para_retomar():
+            programar_cierre(app.job_queue, chat_id, None, segundos=faltan)
+            log.info("cierre pendiente retomado para %s, en %.0f s",
+                     chat_id, faltan)
 
     log.info("Júbilo arrancó")
     app.run_polling()
