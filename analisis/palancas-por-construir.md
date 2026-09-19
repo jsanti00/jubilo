@@ -2,7 +2,67 @@
 
 > **Escrito el:** 2026-09-18, al cerrar la sesión que ejecutó `mejoras-por-hacer.md`.
 > **De dónde sale:** de mirar los dos reportes de cierre de ejemplo. El veredicto de Santiago fue: el formato está bien, el contenido de las secciones 4 y 5 no. Y la frase que enmarca todo el documento: **"este es el verdadero poder del agente que estamos construyendo, y creo que nos falta profundizarlo más allá del reporte. El reporte es solo un síntoma."**
-> **Estado:** nada implementado. Este archivo es el punto de partida.
+> **Estado: EJECUTADO Y DESPLEGADO el 2026-09-19.** Este archivo se conserva
+> porque explica el porqué de cada decisión, pero ya no es una lista de
+> pendientes. Lo que se construyó y lo que quedó abierto está abajo, en la
+> sección 0.
+
+---
+
+## 0. Qué pasó con esto (cierre del 2026-09-19)
+
+Las dos decisiones de la sección 4 las tomó Santiago y se ejecutaron los seis
+pasos de la sección 5. **Todo está desplegado en producción.**
+
+**La decisión A.** Del grupo 3 entraron las palancas 7, 8, 9, 10 y 12. Quedó
+fuera la 11 (el momento de reclamar) por segmento chico, y se descartó la idea
+de comparar el aporte voluntario contra otros vehículos de ahorro: en
+aislamiento funciona bien.
+
+**Lo que se construyó:**
+
+| Pieza | Dónde |
+|---|---|
+| El director de orquesta | `calculadora/palancas.py` (+ 361 comprobaciones) |
+| El detector de la palanca 10 | `calculadora/anomalias.py`, siete tipos con su confianza |
+| El aplazamiento de la palanca 7 | `meses_aplazamiento` en `rpm.py` y `rais.py` |
+| El detalle por AFP y fondo | `RENDIMIENTO_REAL_POR_AFP` en `datos_sistema.py` |
+| Las secciones 4 y 5 del reporte | `reporte/armar_reporte.py`, ya sin redactar nada |
+| El envío automático | `bot/bot.py`, a los 30 minutos de silencio |
+
+**Seis cosas que se aprendieron construyéndolo y que no estaban previstas:**
+
+1. **En el RPM aplazar puede BAJAR la mesada.** Cuando la tasa ya está en su
+   tope y el IBL que manda es el de toda la vida, cada mes extra cotizando por
+   debajo del promedio histórico lo diluye. Caso 04: aplazar 24 meses cuesta
+   $30.000 al mes. La palanca sale negativa y no se ofrece.
+2. **El traslado de régimen no puede ir en el ranking.** Salió como la palanca
+   de mayor impacto y ordenarlo por impacto equivale a recomendarlo.
+3. **Hay un segmento al que ninguna palanca le sirve:** quien queda en la
+   garantía de pensión mínima. Su reporte salía vacío. Ahora se le dice que lo
+   que está en juego no es cuánto recibe, es calificar.
+4. **La palanca 9 prometía cinco veces lo posible** entre los 57 y los 60 años,
+   porque la marca de convergencia solo aparece al 100%. Ahora se escala por la
+   fracción del saldo que la ley deja mover.
+5. **Cinco de los seis bugs no fallaban, mentían.** Una mesada de $6.094
+   millones, un filtro con sesgo que ocultaba la comparación de régimen justo a
+   quien le convenía quedarse, texto del PDF escrito fuera de la hoja, y un bot
+   sin `JobQueue` cuyo log decía que todo iba bien.
+6. **Al desplegar, el bot encoló cinco reportes retroactivos** para personas que
+   habían conversado días antes. No salieron porque faltaba una dependencia.
+   Santiago decidió marcarlas como cerradas: la función arranca solo para
+   conversaciones nuevas. Queda el rastro en `eventos` como
+   `cierre_omitido_retroactivo`.
+
+**Lo que sigue abierto:**
+
+- **Medir el segmento de la garantía mínima.** Es 1 de 6 en el set dorado, que
+  no es una muestra representativa. Si en usuarios reales es alto, el producto
+  necesita una segunda narrativa completa, no solo un aviso.
+- **La palanca 11** (el momento de reclamar), que quedó fuera y sería barata
+  ahora que existe el parámetro de aplazamiento.
+- **Los datos por AFP se refrescan a mano** con `analisis/rendimiento_afp.py`.
+  Nadie lo tiene agendado.
 
 ---
 
