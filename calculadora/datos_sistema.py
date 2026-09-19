@@ -512,6 +512,143 @@ RENDIMIENTO_REAL_ULTIMOS_5_ANIOS = {
     "mayor_riesgo": (0.0200, 0.0237),
 }
 
+# ---------------------------------------------------------------------------
+# EL DETALLE POR ADMINISTRADORA Y POR FONDO (añadido el 2026-09-18)
+# ---------------------------------------------------------------------------
+# POR QUÉ EXISTE. Las dos constantes de arriba solo guardan los EXTREMOS de cada
+# perfil (el peor y el mejor), y con un extremo no se le puede decir nada útil a
+# una persona: "tu perfil rinde entre 1,93% y 2,11%" no le dice con cuál AFP
+# está ni a cuál se podría mover. Esta tabla guarda el número de CADA fondo de
+# CADA administradora, que es lo que habilita las dos palancas del banco:
+#
+#   - Palanca 9 (elegir portafolio): comparar los perfiles DENTRO de su AFP.
+#   - Palanca 8 (cambiar de administradora): comparar las AFP DENTRO de su perfil.
+#
+# El script `analisis/rendimiento_afp.py` siempre calculó esta tabla; lo que
+# faltaba era guardarla. Correrlo de nuevo la reproduce entera.
+#
+# QUÉ DICE EL DATO, y es lo que decide cómo se presentan las dos palancas: la
+# distancia entre perfiles DENTRO de una misma AFP (entre 138 y 209 puntos
+# básicos) es de dos a diez veces la distancia entre AFP dentro de un mismo
+# perfil (entre 18 y 98 puntos básicos). O sea que la decisión de PORTAFOLIO
+# pesa mucho más que la de ADMINISTRADORA. Por eso la palanca 8 va subordinada
+# a la 9 y nunca en paralelo: mostrarlas como iguales invita a la persona a
+# optimizar la pequeña y a ignorar la grande.
+#
+# Y OJO CON ESTO: no existe "la mejor AFP". Depende del perfil. Colfondos es la
+# PEOR en moderado (2,27%) y la MEJOR en mayor riesgo (4,13%). Cualquier frase
+# del tipo "cámbiate a X" sin decir el portafolio es sencillamente falsa.
+#
+# Cada valor es la pareja (rendimiento real del periodo completo, rendimiento
+# real de los últimos 5 años). El segundo NO lo usa la proyección, por la misma
+# razón que arriba: cinco años es una ventana corta y la inflación del periodo
+# fue excepcional. Se guarda porque es información honesta, no para proyectar.
+#
+# Fuente, periodo y método: los mismos de FUENTE_RENDIMIENTO. Las cuatro AFP
+# comparten exactamente los mismos 140 cierres mensuales, así que los números
+# son comparables entre sí. Es rentabilidad DEL FONDO, no del afiliado: la
+# comisión ya se descuenta antes, en APORTE_A_CUENTA_RAIS.
+RENDIMIENTO_REAL_POR_AFP = {
+    "conservador": {
+        "Protección": (0.019252, 0.006187),
+        "Skandia":    (0.019894, 0.003915),
+        "Colfondos":  (0.020407, 0.007991),
+        "Porvenir":   (0.021078, 0.008828),
+    },
+    "moderado": {
+        "Colfondos":  (0.022669, -0.004737),
+        "Skandia":    (0.028528, 0.001616),
+        "Protección": (0.029640, 0.010430),
+        "Porvenir":   (0.032505, 0.008825),
+    },
+    "mayor_riesgo": {
+        "Protección": (0.033102, 0.022015),
+        "Porvenir":   (0.033386, 0.022460),
+        "Skandia":    (0.036983, 0.023695),
+        "Colfondos":  (0.041316, 0.019966),
+    },
+    # El fondo de retiro programado no es una opción que la persona escoja
+    # mientras cotiza: es donde queda el saldo de quien YA se pensionó por esa
+    # modalidad. Se guarda para no perder el dato, pero las palancas 8 y 9 no
+    # lo ofrecen nunca, porque ofrecerlo sería un error de segmento.
+    "retiro_programado": {
+        "Colfondos":  (0.023563, 0.005959),
+        "Skandia":    (0.024240, 0.007583),
+        "Protección": (0.025026, 0.010858),
+        "Porvenir":   (0.029249, 0.018712),
+    },
+}
+
+# El "FONDO ALTERNATIVO" de Skandia (2,34% real) queda FUERA de la tabla a
+# propósito: no es uno de los cuatro multifondos que define la ley, así que no
+# tiene con qué compararse en las otras tres AFP. Meterlo en la comparación
+# haría creer que hay una quinta opción que en realidad solo existe en una
+# administradora. Se deja anotado aquí para que nadie piense que se perdió.
+FONDOS_FUERA_DE_LA_COMPARACION = {
+    ("Skandia", "FONDO ALTERNATIVO"): (0.023362, -0.009548),
+}
+
+# Los tres perfiles que una persona SÍ puede escoger mientras cotiza, en orden
+# de menos a más exposición a renta variable. El orden importa: es el que usan
+# las palancas para decir "moverte un escalón vale tanto".
+PERFILES_ESCOGIBLES = ("conservador", "moderado", "mayor_riesgo")
+
+
+def rendimiento_de(perfil, afp=None, ventana="completa"):
+    """Devuelve el rendimiento real anual de un fondo concreto.
+
+    perfil: uno de PERFILES_ESCOGIBLES (o "retiro_programado").
+    afp: el nombre de la administradora. Si no se pasa, devuelve el punto medio
+         del perfil entre las cuatro, que es lo que se usa cuando la persona
+         todavía no nos ha dicho con cuál está.
+    ventana: "completa" (ene-2015 a ago-2026, la que se usa) o "5_anios".
+
+    Devuelve None si el perfil o la AFP no existen, en vez de reventar: quien
+    llama decide qué hacer, y así una AFP nueva no tumba el diagnóstico.
+    """
+    # Primero ubicamos el perfil dentro de la tabla grande.
+    fondos = RENDIMIENTO_REAL_POR_AFP.get(perfil)
+    if not fondos:
+        return None
+    # La posición 0 de cada pareja es el periodo completo, la 1 son 5 años.
+    posicion = 0 if ventana == "completa" else 1
+    # Si nos dijeron la AFP, devolvemos su número exacto.
+    if afp is not None:
+        pareja = fondos.get(afp)
+        return None if pareja is None else pareja[posicion]
+    # Si no nos la dijeron, el promedio simple de las cuatro. Simple y no
+    # ponderado a propósito: ponderar por tamaño del fondo respondería "cómo le
+    # fue al sistema", y lo que queremos es "cómo le va a una persona cualquiera".
+    valores = [pareja[posicion] for pareja in fondos.values()]
+    return round(sum(valores) / len(valores), 6)
+
+
+def mejor_y_peor_afp(perfil, ventana="completa"):
+    """Devuelve (nombre_peor, valor_peor, nombre_mejor, valor_mejor) de un perfil.
+
+    Es lo que alimenta la palanca 8: dentro del portafolio en el que ya está la
+    persona, cuánto separa a la administradora que peor lo hizo de la que mejor.
+    Devuelve None si el perfil no existe.
+    """
+    fondos = RENDIMIENTO_REAL_POR_AFP.get(perfil)
+    if not fondos:
+        return None
+    posicion = 0 if ventana == "completa" else 1
+    # Ordenamos las cuatro AFP de menor a mayor rendimiento.
+    ordenadas = sorted(fondos.items(), key=lambda par: par[1][posicion])
+    nombre_peor, pareja_peor = ordenadas[0]
+    nombre_mejor, pareja_mejor = ordenadas[-1]
+    return (nombre_peor, pareja_peor[posicion],
+            nombre_mejor, pareja_mejor[posicion])
+
+
+ADVERTENCIA_POR_AFP = (
+    "estos son rendimientos PASADOS de cada fondo, medidos sobre el mismo "
+    "periodo para las cuatro administradoras. No son una promesa de lo que "
+    "vaya a pasar hacia adelante, y Júbilo no recomienda administradora ni "
+    "portafolio: muestra el dato y la persona decide"
+)
+
 # La serie que se reemplazó, conservada para poder reconstruir con qué números
 # se calculó un diagnóstico anterior al 2026-09-18. No se usa.
 RENDIMIENTO_REAL_OBSERVADO_ANTERIOR = {

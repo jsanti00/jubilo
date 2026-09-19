@@ -358,6 +358,19 @@ def fecha_en_que_cumple_semanas(dias_hoy, sexo, fecha_calculo, densidad):
     return None
 
 
+def sumar_meses(fecha, meses_a_sumar):
+    """Corre una fecha N meses hacia adelante, siempre al día 1 de ese mes.
+
+    Existe para la palanca de aplazar la pensión ("trabajar un año más"). No se
+    usa timedelta porque los meses no duran todos lo mismo: se suma en la
+    aritmética de año y mes, que es la que usa el resto del módulo.
+    """
+    # Pasamos todo a una cuenta corrida de meses desde el año cero, sumamos, y
+    # volvemos a partir en año y mes. Es la forma que no se equivoca en diciembre.
+    total = fecha.year * 12 + (fecha.month - 1) + meses_a_sumar
+    return date(total // 12, total % 12 + 1, 1)
+
+
 def proyectar_meses(meses, fecha_calculo, fecha_pension, ibc_futuro, densidad):
     """Agrega al mapa de meses los que la persona cotizaría de aquí a pensionarse.
 
@@ -387,7 +400,7 @@ def proyectar_meses(meses, fecha_calculo, fecha_pension, ibc_futuro, densidad):
 # ---------------------------------------------------------------------------
 
 def diagnosticar(caso, sexo, fecha_calculo=None, ibc_futuro=None,
-                 densidad_futura=None):
+                 densidad_futura=None, meses_aplazamiento=0):
     """Produce el diagnóstico RPM completo de un caso del set dorado.
 
     sexo se pasa aparte porque el documento casi nunca lo trae (regla:
@@ -398,6 +411,16 @@ def diagnosticar(caso, sexo, fecha_calculo=None, ibc_futuro=None,
     del último mes cotizado y el ritmo de los últimos 3 años). Cambiarlos es lo
     que permite responder "¿y si cotizo sobre más?" con números, no con
     intuiciones. ibc_futuro va en pesos de hoy.
+
+    meses_aplazamiento es la palanca de "trabajar un año más": cuántos meses se
+    queda cotizando DESPUÉS de la fecha en que ya se podría pensionar. En el RPM
+    empuja la mesada por dos caminos a la vez, y por eso vale tanto: suma
+    semanas (que suben la tasa de reemplazo) y corre hacia adelante la ventana
+    de 10 años del IBL, que pasa a llenarse con el salario de hoy en vez de con
+    el de hace una década. Lo que NO hace en el RPM es acortar el tiempo que la
+    mesada tiene que durar: eso solo aplica en el RAIS, donde la mesada sale de
+    repartir un saldo. Cero (el valor por defecto) es el comportamiento de
+    siempre: pensionarse en cuanto se pueda.
     """
     fecha_calculo = fecha_calculo or date.today()
     anio_hoy = fecha_calculo.year
@@ -428,6 +451,14 @@ def diagnosticar(caso, sexo, fecha_calculo=None, ibc_futuro=None,
 
     # La pensión llega cuando se cumplen AMBOS requisitos
     fecha_pension = max(fecha_edad, fecha_semanas) if fecha_semanas else None
+
+    # La palanca de aplazar: si la persona decide seguir cotizando después de
+    # poder pensionarse, corremos la fecha hacia adelante. Todo lo que viene
+    # abajo (semanas acumuladas, ventana del IBL, año de liquidación) ya se
+    # calcula a partir de esta fecha, así que con moverla aquí basta.
+    fecha_pension_sin_aplazar = fecha_pension
+    if fecha_pension and meses_aplazamiento:
+        fecha_pension = sumar_meses(fecha_pension, meses_aplazamiento)
 
     # --- Escenario base: sigue cotizando hasta pensionarse ---
     # Por defecto "como hoy" (mismo salario, mismo ritmo), pero el usuario puede
@@ -508,6 +539,11 @@ def diagnosticar(caso, sexo, fecha_calculo=None, ibc_futuro=None,
         "fecha_cumple_edad": fecha_edad.isoformat(),
         "fecha_cumple_semanas": fecha_semanas.isoformat() if fecha_semanas else None,
         "fecha_pension_estimada": fecha_pension.isoformat() if fecha_pension else None,
+        # La fecha sin aplazar y los meses aplazados viajan juntos para que
+        # quien lea el diagnóstico sepa si está viendo un escenario aplazado.
+        "fecha_pension_sin_aplazar": (fecha_pension_sin_aplazar.isoformat()
+                                      if fecha_pension_sin_aplazar else None),
+        "meses_aplazamiento": meses_aplazamiento,
         "escenario_sigue_cotizando": escenario_base,
         "escenario_deja_de_cotizar": escenario_sin_cotizar,
         "ibl_toda_la_vida": ibl_toda_vida,

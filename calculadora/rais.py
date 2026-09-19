@@ -26,7 +26,7 @@ from datos_sistema import (
 # actual y las utilidades de fechas (una sola definición de cada regla)
 from rpm import (
     expandir_a_meses, total_dias, densidad_reciente, ibc_actual,
-    sumar_anios, meses_entre,
+    sumar_anios, meses_entre, sumar_meses,
 )
 
 
@@ -265,7 +265,7 @@ def clasificar_salida(mesada, semanas, smlmv, sexo="M", anio=2026):
 
 
 def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
-                 ibc_futuro=None, densidad_futura=None):
+                 ibc_futuro=None, densidad_futura=None, meses_aplazamiento=0):
     """Produce el diagnóstico RAIS completo de un caso del set dorado.
 
     sexo y edad se pasan aparte cuando el documento no los trae (regla:
@@ -276,6 +276,16 @@ def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
     de aquí en adelante (en pesos de hoy) y el ritmo con que lo haría. Si no se
     pasan, se usan los del propio historial. Son la palanca para responder
     "¿y si cotizo sobre más?" con la calculadora y no a ojo.
+
+    meses_aplazamiento es la palanca de "trabajar un año más": cuántos meses
+    sigue cotizando DESPUÉS de la edad legal. En el RAIS empuja la mesada por
+    TRES caminos a la vez, y por eso es la palanca más potente del banco:
+      1. Entran más aportes a la cuenta.
+      2. El saldo que ya tenía rinde más tiempo.
+      3. La mesada tiene que durar menos años, así que cada peso del saldo
+         compra más mesada mensual.
+    Los tres empujan en la misma dirección, que es lo que casi nadie tiene en
+    la cabeza. Cero (el valor por defecto) es el comportamiento de siempre.
     """
     fecha_calculo = fecha_calculo or date.today()
     smlmv_hoy = SMLMV[max(SMLMV)]
@@ -322,7 +332,12 @@ def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
 
     # --- Proyección a la edad legal (57/62) en los 3 perfiles de fondo ---
     edad_legal = EDAD_PENSION[sexo]
-    expectativa = EXPECTATIVA_VIDA[sexo]
+    # La expectativa "de fábrica", sin aplazar. Se guarda aparte porque más
+    # abajo el bloque de pensión anticipada la necesita intacta: ese bloque va
+    # en la dirección CONTRARIA (pensionarse antes), así que no puede heredar
+    # el descuento del aplazamiento.
+    expectativa_base = EXPECTATIVA_VIDA[sexo]
+    expectativa = expectativa_base
     # Cuántos meses faltan para la edad legal. Con fecha de nacimiento se cuenta
     # de fecha a fecha; contarlo en años enteros de edad se come hasta 11 meses
     # de aportes y de rendimientos, que es plata real en la cuenta.
@@ -338,7 +353,30 @@ def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
         meses_futuros = max(0, (edad_legal - edad) * 12)
         anio_edad_legal = fecha_calculo.year + max(0, edad_legal - edad)
         horizonte_exacto = False
+    # --- La palanca de aplazar: "trabajar un año más" ---
+    # Aquí es donde se materializan los tres efectos. No hace falta tocar nada
+    # más abajo: toda la proyección cuelga de estas tres variables.
+    meses_futuros_sin_aplazar = meses_futuros
+    anio_pension_sin_aplazar = anio_edad_legal
+    if meses_aplazamiento:
+        # Efectos 1 y 2: más meses de aporte y más tiempo rindiendo.
+        meses_futuros = meses_futuros + meses_aplazamiento
+        # Efecto 3: la renta tiene que durar menos años. Se resta en años
+        # (los meses aplazados divididos por doce) y nunca se deja bajar de
+        # un año, que es el piso técnico para no dividir por algo cercano a
+        # cero y producir una mesada absurda.
+        expectativa = max(1.0, expectativa_base - meses_aplazamiento / 12)
+        # El año en que compra la renta también se corre, y eso importa: de él
+        # dependen el precio de mercado del factor y, para las mujeres, el
+        # requisito de semanas de la garantía de pensión mínima.
+        if nacimiento:
+            anio_edad_legal = sumar_meses(sumar_anios(nacimiento, edad_legal),
+                                          meses_aplazamiento).year
+        else:
+            anio_edad_legal = anio_edad_legal + meses_aplazamiento // 12
+
     # Semanas que tendría a la edad legal si sigue cotizando al ritmo supuesto
+    # (ya con el aplazamiento incluido, si lo hay)
     semanas_futuras = round((dias + meses_futuros * 30 * densidad_proyectada) / 7, 1)
     # El año en que cumple la edad legal es el momento en que se evalúa la GPM,
     # y para las mujeres el requisito de semanas depende de ese año (C-054/2024)
@@ -495,7 +533,7 @@ def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
                 saldo_x = proyectar_saldo(saldo, aporte_mensual, meses_x,
                                           RENDIMIENTO_REAL["moderado"])
                 # A menor edad, más años de expectativa de vida por financiar
-                expectativa_x = expectativa + (edad_legal - edad_x)
+                expectativa_x = expectativa_base + (edad_legal - edad_x)
                 mesada_x = mesada_desde_saldo(saldo_x, expectativa_x, tasa)
                 if mesada_x >= CAPITAL_MINIMO_PCT * smlmv_hoy:
                     edades_anticipadas[nombre] = edad_x
@@ -531,6 +569,16 @@ def diagnosticar(caso, sexo=None, edad=None, fecha_calculo=None,
         "ibc_futuro_supuesto": ibc_proyectado,
         "densidad_futura_supuesta": round(densidad_proyectada, 2),
         "meses_hasta_edad_legal": meses_futuros,
+        # Los tres campos del aplazamiento viajan juntos para que quien lea el
+        # diagnóstico sepa si está viendo un escenario aplazado y contra qué
+        # compararlo. Con meses_aplazamiento en cero son los de siempre.
+        "meses_aplazamiento": meses_aplazamiento,
+        "meses_hasta_edad_legal_sin_aplazar": meses_futuros_sin_aplazar,
+        "anio_pension_sin_aplazar": anio_pension_sin_aplazar,
+        "anio_pension": anio_edad_legal,
+        # Los años que la mesada tiene que durar, ya descontado el aplazamiento.
+        # Es el tercer efecto de la palanca y aquí queda visible.
+        "anios_a_financiar": round(expectativa, 2),
         # False = el horizonte se contó en años enteros de edad porque el
         # documento no trae fecha de nacimiento (margen de hasta 12 meses)
         "horizonte_exacto": horizonte_exacto,
