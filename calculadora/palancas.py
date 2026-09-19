@@ -43,6 +43,7 @@ las palancas que le faltan datos con la pregunta exacta que habría que hacer, y
 quien conversa decide si ya es el momento de hacerla.
 """
 
+import math
 from datetime import date
 
 import rais
@@ -53,6 +54,11 @@ import aportes_voluntarios as av
 from datos_sistema import (
     RENDIMIENTO_REAL_POR_AFP, PERFILES_ESCOGIBLES, ADVERTENCIA_POR_AFP,
     rendimiento_de, mejor_y_peor_afp, mezcla_obligatoria,
+    # Los tres datos que necesita el valle de la garantia de pension minima:
+    # el salario minimo (que es el piso), el umbral del 110% que hay que
+    # superar para salir de la garantia, y la fraccion de cada peso cotizado
+    # que de verdad entra a la cuenta individual.
+    SMLMV, CAPITAL_MINIMO_PCT, APORTE_A_CUENTA_RAIS,
 )
 
 # El detector de anomalías de la historia laboral es opcional a propósito: si
@@ -101,6 +107,26 @@ UMBRAL_MINIMO_PESOS = 20000
 # La palanca 8 (administradora) y la 4 (régimen) no gastan cupo: la 8 viaja
 # pegada a la 9 y la 4 va aparte, por las razones explicadas más abajo.
 MAXIMO_A_MOSTRAR = 4
+
+# --- El valle de la garantia de pension minima (2026-09-19) ---------------
+# Cuanto hay que pasarse del umbral del 110% del salario minimo para decir que
+# la persona SALTO el valle. Se exige margen a proposito: quedar justo encima
+# del umbral es quedar a un mal ano de rendimiento de volver a caer dentro, y
+# ofrecerle a alguien un salto que no aguanta un tropiezo es venderle humo.
+MARGEN_PARA_SALTAR_EL_VALLE = 0.05
+
+# Hasta donde llega "un esfuerzo razonable", medido contra lo que la persona
+# gana hoy. Por encima de esto el salto deja de ser un camino y pasa a ser una
+# frase bonita: se le dice el numero y se le dice que no da. Es una decision de
+# producto, no una regla de la ley, y por eso vive aqui arriba y se puede mover.
+LIMITE_ESFUERZO_RAZONABLE = 0.25
+
+# Los topes de la busqueda del aporte requerido. La busqueda es una biseccion
+# que corre la calculadora en cada paso, asi que hay que decirle donde parar:
+# 40 pasos dejan el resultado con error de menos de un peso, y el techo evita
+# quedarse dando vueltas si por alguna razon la mesada nunca sube.
+PASOS_DE_BUSQUEDA = 40
+TECHO_DE_BUSQUEDA_MENSUAL = 200000000
 
 
 def pesos(valor):
@@ -1193,23 +1219,286 @@ def palanca_sobrecotizar(caso, regimen, sexo, edad, fecha_calculo, base, datos):
 # El segmento al que ninguna palanca le sirve, y que hay que nombrar
 # ---------------------------------------------------------------------------
 
-def aviso_de_segmento(diagnostico, regimen):
-    """Detecta a la persona cuya mesada está clavada en el piso de la ley.
+def _mesada_con_aporte_extra(caso, sexo, edad, fecha_calculo, diagnostico,
+                             aporte_extra):
+    """Vuelve a correr la calculadora metiendole X pesos extra a la cuenta cada mes.
 
-    EL CASO QUE LO DESTAPÓ (caso 02 del set dorado, 2026-09-18). Se corrieron
+    COMO SE METE EL APORTE. La calculadora no tiene un parametro que diga
+    "ademas aporta tanto al mes": lo que tiene es el IBC futuro, y de cada peso
+    de IBC entran a la cuenta 11,5 centavos, ajustados por la densidad con la
+    que la persona cotiza. Asi que se hace la cuenta al reves: se traduce el
+    aporte extra en el IBC que lo produciria, y se corre el diagnostico con ese
+    IBC. El numero sale entero de la calculadora, no de una formula aparte, que
+    es la regla dura de este modulo.
+
+    Devuelve (mesada, salida, saldo_proyectado) del escenario que le aplica.
+    """
+    ibc_base = diagnostico.get("ibc_futuro_supuesto") or 0
+    densidad = diagnostico.get("densidad_futura_supuesta") or 0
+    if not densidad:
+        return None, None, None
+    ibc = ibc_base + aporte_extra / (APORTE_A_CUENTA_RAIS * densidad)
+    nuevo = _diagnosticar(caso, "RAIS", sexo, edad, fecha_calculo,
+                          ibc_futuro=ibc)
+    if nuevo.get("error"):
+        return None, None, None
+    escenario = ((nuevo.get("escenarios") or {})
+                 .get(escenario_aplicable(nuevo)) or {})
+    return (escenario.get("mesada"), escenario.get("salida"),
+            escenario.get("saldo_proyectado"))
+
+
+def _aporte_minimo_que_logra(correr, condicion):
+    """El aporte mensual mas pequeno que cumple la condicion, por biseccion.
+
+    `correr` es la funcion que devuelve la mesada de un aporte, y `condicion`
+    dice si esa mesada ya sirve. Primero se dobla el aporte hasta encontrar uno
+    que si sirva (para saber entre que dos numeros buscar) y despues se parte el
+    intervalo por la mitad 40 veces. Devuelve None si ni con el techo se logra.
+    """
+    alto = 100000.0
+    encontrado = False
+    while alto <= TECHO_DE_BUSQUEDA_MENSUAL:
+        mesada = correr(alto)
+        if mesada is not None and condicion(mesada):
+            encontrado = True
+            break
+        alto *= 2
+    if not encontrado:
+        return None
+    bajo = 0.0
+    for _ in range(PASOS_DE_BUSQUEDA):
+        medio = (bajo + alto) / 2
+        mesada = correr(medio)
+        if mesada is not None and condicion(mesada):
+            alto = medio
+        else:
+            bajo = medio
+    return alto
+
+
+def valle_de_la_garantia_minima(caso, sexo, edad, fecha_calculo, diagnostico):
+    """Los dos caminos de quien esta en el piso de la garantia, con numeros.
+
+    EL CONCEPTO, que es una idea de producto de Santiago. La garantia de
+    pension minima crea un VALLE de esfuerzo desperdiciado. Mientras el capital
+    de la persona no financie mas que un salario minimo, el Estado le completa
+    hasta ese minimo, y entonces cada peso extra que ahorre DENTRO del valle no
+    le sube la mesada ni un centavo: el retorno marginal es exactamente cero.
+    El retorno solo vuelve cuando junta lo suficiente para SALTAR el valle
+    entero y pensionarse por su propio capital, por encima del umbral del 110%
+    del salario minimo. Decirle "ahorra un poco mas" a quien esta en el fondo
+    del valle es pedirle que regale plata.
+
+    POR ESO ESTO NO ES UN CONSEJO, SON DOS CAMINOS CON PRECIO:
+      1. Aceptar el minimo: no hacer esfuerzo extra y dejar que el Estado
+         complete. Se cuantifica cuanta plata estaria botando si aportara de
+         mas sin llegar a saltar.
+      2. Saltar el valle: cuanto tendria que aportar cada mes, de aqui a su
+         edad de pension, para superar el umbral con margen.
+
+    El numero que convierte esto en una decision es el segundo. Si son
+    $200.000 al mes mucha gente lo considera; si son $2 millones la respuesta
+    es obvia y lo util es que deje de perder plata hoy.
+
+    Los dos numeros se encuentran corriendo la calculadora una y otra vez
+    (biseccion), nunca estimando: es la regla dura del banco de palancas.
+
+    Devuelve None si no se puede calcular (falta el caso, o la persona ya
+    cumplio la edad de pension y no le quedan meses por delante).
+    """
+    if not caso or not sexo or not diagnostico:
+        return None
+    meses = diagnostico.get("meses_hasta_edad_legal")
+    if not meses or meses <= 0:
+        return None
+
+    clave = escenario_aplicable(diagnostico)
+    escenario = (diagnostico.get("escenarios") or {}).get(clave) or {}
+    mesada_piso = escenario.get("mesada")
+    saldo_piso = escenario.get("saldo_proyectado")
+    if mesada_piso is None:
+        return None
+
+    smlmv = SMLMV[max(SMLMV)]
+    # La meta: superar el umbral del 110% del salario minimo, y con margen.
+    mesada_objetivo = CAPITAL_MINIMO_PCT * smlmv * (1 + MARGEN_PARA_SALTAR_EL_VALLE)
+
+    def mesada_de_aporte(aporte):
+        return _mesada_con_aporte_extra(caso, sexo, edad, fecha_calculo,
+                                        diagnostico, aporte)[0]
+
+    # CAMINO 1. Hasta donde puede aportar sin que le suba la mesada ni un peso.
+    # Es el borde del fondo plano del valle, y sale de la calculadora: es el
+    # aporte mas pequeno con el que la mesada por fin se mueve, menos nada.
+    aporte_que_mueve = _aporte_minimo_que_logra(mesada_de_aporte,
+                                                lambda m: m > mesada_piso)
+    aporte_sin_efecto = (round(aporte_que_mueve) - 1
+                         if aporte_que_mueve is not None else None)
+    desperdicio = (round(aporte_sin_efecto * meses)
+                   if aporte_sin_efecto is not None else None)
+
+    # CAMINO 2. El aporte mensual que si la saca del valle, con margen.
+    aporte_requerido = _aporte_minimo_que_logra(mesada_de_aporte,
+                                                lambda m: m >= mesada_objetivo)
+    mesada_lograda = salida_lograda = saldo_logrado = None
+    if aporte_requerido is not None:
+        # Se redondea HACIA ARRIBA al peso ANTES de calcular la mesada que se
+        # le va a mostrar. El numero que se le dice a la persona tiene que ser
+        # exactamente el que produce esa mesada: redondear hacia abajo la
+        # dejaria un peso por debajo del objetivo y la cifra dejaria de ser
+        # reproducible corriendo la calculadora con lo que se le pidio.
+        aporte_requerido = float(math.ceil(aporte_requerido))
+        mesada_lograda, salida_lograda, saldo_logrado = _mesada_con_aporte_extra(
+            caso, sexo, edad, fecha_calculo, diagnostico, aporte_requerido)
+
+    ingreso_hoy = diagnostico.get("ibc_actual")
+    pct_del_ingreso = (round(aporte_requerido / ingreso_hoy, 3)
+                       if aporte_requerido and ingreso_hoy else None)
+    # ALCANZABLE O NO. No es una opinion: es el aporte requerido contra lo que
+    # la persona gana hoy. Si pasa del limite, se le dice con el numero en la
+    # mano en vez de ofrecerle un camino que no existe.
+    alcanzable = bool(aporte_requerido is not None
+                      and pct_del_ingreso is not None
+                      and pct_del_ingreso <= LIMITE_ESFUERZO_RAZONABLE)
+
+    # El IBC equivalente, para quien piensa en sueldo y no en aportes.
+    ibc_requerido = None
+    if aporte_requerido is not None:
+        densidad = diagnostico.get("densidad_futura_supuesta") or 0
+        base_ibc = diagnostico.get("ibc_futuro_supuesto") or 0
+        if densidad:
+            ibc_requerido = round(base_ibc
+                                  + aporte_requerido / (APORTE_A_CUENTA_RAIS * densidad))
+
+    anios = round(meses / 12, 1)
+    anios_texto = str(anios).replace(".", ",")
+
+    camino_1 = {
+        "titulo": "Aceptar el mínimo",
+        "frase": ("Hoy tu mesada es " + pesos(mesada_piso) + " y la fija la "
+                  "garantía, no tu ahorro. Puedes aportar hasta "
+                  + pesos(aporte_sin_efecto) + " al mes durante los próximos "
+                  + anios_texto + " años, poner " + pesos(desperdicio)
+                  + " de tu bolsillo, y tu mesada seguiría siendo exactamente "
+                  + pesos(mesada_piso) + ". Ese esfuerzo no te compra nada."
+                  if aporte_sin_efecto is not None else
+                  "Tu mesada la fija la garantía, no tu ahorro: aportar de más "
+                  "sin salir de la garantía no te la sube."),
+        "aporte_maximo_sin_efecto_mes": aporte_sin_efecto,
+        "plata_que_botaria": desperdicio,
+        "mesada_si_lo_hace": mesada_piso,
+        "retorno_marginal": 0,
+    }
+
+    if aporte_requerido is None:
+        frase_2 = ("Con tus números no encontré un aporte mensual que te saque "
+                   "de la garantía antes de tu edad de pensión.")
+    elif alcanzable:
+        frase_2 = ("Para salir de la garantía necesitas aportar "
+                   + pesos(round(aporte_requerido)) + " al mes durante "
+                   + anios_texto + " años (el "
+                   + porcentaje(pct_del_ingreso) + " de lo que ganas hoy). "
+                   "Con eso tu mesada pasaría de " + pesos(mesada_piso)
+                   + " a " + pesos(mesada_lograda) + ", o sea "
+                   + pesos(mesada_lograda - mesada_piso) + " más al mes, y "
+                   "dejaría de depender de que califiques a la garantía.")
+    else:
+        frase_2 = ("Saltar la garantía te exigiría aportar "
+                   + pesos(round(aporte_requerido)) + " al mes durante "
+                   + anios_texto + " años, el "
+                   + porcentaje(pct_del_ingreso) + " de lo que ganas hoy. No "
+                   "es un camino real para ti, y prefiero decírtelo con el "
+                   "número que ofrecerte una esperanza falsa.")
+
+    camino_2 = {
+        "titulo": "Saltar el valle",
+        "alcanzable": alcanzable,
+        "frase": frase_2,
+        "aporte_mensual_requerido": (round(aporte_requerido)
+                                     if aporte_requerido is not None else None),
+        "aporte_como_pct_del_ingreso_hoy": pct_del_ingreso,
+        "ibc_equivalente_requerido": ibc_requerido,
+        "meses_de_esfuerzo": meses,
+        "capital_adicional_requerido": (round(saldo_logrado - saldo_piso)
+                                        if saldo_logrado and saldo_piso else None),
+        "mesada_si_lo_logra": mesada_lograda,
+        "salto_en_la_mesada": (mesada_lograda - mesada_piso
+                               if mesada_lograda is not None else None),
+        "salida_si_lo_logra": salida_lograda,
+    }
+
+    if aporte_requerido is None:
+        veredicto = ("Lo sensato es no poner un peso de más en la cuenta y "
+                     "concentrarse en asegurar las semanas de la garantía.")
+    elif alcanzable:
+        veredicto = ("O llegas a " + pesos(round(aporte_requerido))
+                     + " al mes o no pones nada: cualquier cifra intermedia es "
+                     "plata que sale de tu bolsillo y no vuelve como mesada.")
+    else:
+        veredicto = ("El camino que sí te sirve es el primero: no aportar de "
+                     "más y asegurar las semanas. Todo lo que pongas por "
+                     "debajo de " + pesos(round(aporte_requerido))
+                     + " al mes lo estarías regalando.")
+
+    return {
+        "que_es_el_valle": (
+            "Mientras tu capital no financie más que un salario mínimo, la "
+            "garantía te completa hasta ese mínimo. Por eso ahorrar más dentro "
+            "de esa zona no te sube la mesada: solo cuando superas el umbral "
+            "del 110% del salario mínimo vuelves a ganar algo por cada peso."),
+        "mesada_hoy": mesada_piso,
+        "piso_smlmv": smlmv,
+        "mesada_umbral": round(CAPITAL_MINIMO_PCT * smlmv),
+        "mesada_objetivo_con_margen": round(mesada_objetivo),
+        "margen_exigido": MARGEN_PARA_SALTAR_EL_VALLE,
+        "camino_1_aceptar_el_minimo": camino_1,
+        "camino_2_saltar_el_valle": camino_2,
+        "veredicto": veredicto,
+        "supuesto": ("Supone que el aporte extra entra a la cuenta todos los "
+                     "meses hasta la edad de pensión, en pesos de hoy, con el "
+                     "rendimiento del escenario que le aplica. Lo razonable se "
+                     "mide contra su ingreso de hoy: por encima de "
+                     + porcentaje(LIMITE_ESFUERZO_RAZONABLE)
+                     + " el salto se declara inalcanzable."),
+        "fuente": "rais.py corrido por bisección; Ley 100 de 1993 art. 64 y 65",
+    }
+
+
+def aviso_de_segmento(diagnostico, regimen, caso=None, sexo=None, edad=None,
+                      fecha_calculo=None):
+    """Detecta a la persona a la que la garantía de pensión mínima le manda.
+
+    EL CASO QUE LO DESTAPO (caso 02 del set dorado, 2026-09-18). Se corrieron
     las once palancas y TODAS movieron menos de $20.000 al mes. No era un error:
-    a esa persona su capital no le alcanza para más que el salario mínimo, así
-    que la mesada se la fija la Garantía de Pensión Mínima, que es un PISO. Y
+    a esa persona su capital no le alcanza para mas que el salario minimo, asi
+    que la mesada se la fija la Garantia de Pension Minima, que es un PISO. Y
     contra un piso no hay palanca que valga: suba lo que suba su saldo, mientras
-    no supere el mínimo, su mesada es el mínimo.
+    no supere el minimo, su mesada es el minimo.
 
-    POR QUÉ HAY QUE DECIRLO EN VOZ ALTA. Sin este aviso, el reporte de esa
-    persona sale vacío, y un reporte vacío se lee como "no hay nada que hacer",
-    que es lo contrario de la verdad. Para ella sí hay algo enorme en juego,
-    solo que no es el tamaño de la mesada: es CALIFICAR. La garantía exige un
-    número de semanas, y si no las alcanza no recibe una mesada más pequeña,
-    recibe una devolución de saldo y se queda sin pensión. Su palanca es llegar
-    a las semanas, no engordar el saldo.
+    LA AMBIGUEDAD QUE HABIA AQUI, y que era un bug (encontrada el 2026-09-19).
+    Este aviso se disparaba por la ETIQUETA de salida del diagnostico, y esa
+    etiqueta tapa DOS situaciones que no son la misma:
+
+      A. La persona esta de verdad en el piso: su capital financia menos de un
+         salario minimo y el Estado le completa. Ahi si es cierto que ninguna
+         palanca le mueve la mesada.
+      B. Su capital financia MAS de un salario minimo pero todavia no llega al
+         umbral del 110% con el que la ley la deja pensionarse por capital
+         propio. A ella el Estado no le completa nada, y sus palancas SI le
+         suben la mesada peso a peso. Lo que tiene en juego es otra cosa: sigue
+         dependiendo de calificar a la garantia por semanas, y esta a un mal
+         supuesto de caer al piso.
+
+    Decirle a la segunda "tu mesada la fija la garantia, subir el sueldo no te
+    la sube" es falso y le quita la accion a quien si puede mejorar (le pasaba
+    al caso 01, con una mesada de $1.916.567 contra un minimo de $1.750.905).
+    Por eso cada situacion tiene su propio tipo y su propio mensaje, y no se
+    colapsan en uno.
+
+    caso, sexo, edad y fecha_calculo son opcionales y sirven para una sola
+    cosa: cuantificar el valle de la garantia (los dos caminos con numeros).
+    Sin ellos el aviso sale igual, pero sin esa cuantificacion.
 
     Devuelve None cuando no es el caso, que es lo normal.
     """
@@ -1226,39 +1515,108 @@ def aviso_de_segmento(diagnostico, regimen):
     alcanza = (exigidas is not None and proyectadas is not None
                and proyectadas >= exigidas)
 
+    # LA COMPROBACION QUE FALTABA: no basta la etiqueta, hay que mirar si la
+    # mesada esta DE VERDAD clavada en el piso. La calculadora entrega
+    # max(mesada propia, salario minimo), asi que una mesada por encima del
+    # minimo significa que el piso no le esta dando nada.
+    smlmv = SMLMV[max(SMLMV)]
+    mesada = escenario.get("mesada")
+    umbral = CAPITAL_MINIMO_PCT * smlmv
+    en_el_piso = mesada is not None and round(mesada) <= round(smlmv)
+
+    faltan = (round(exigidas - proyectadas, 1)
+              if exigidas is not None and proyectadas is not None and not alcanza
+              else None)
+    # El texto de las semanas es el mismo en las dos situaciones, porque en las
+    # dos la pension depende de calificar a la garantia. Se arma una sola vez.
     if alcanza:
-        mensaje = ("Tu mesada la fija la Garantía de Pensión Mínima: con tu "
-                   "ahorro, la ley te asegura un salario mínimo. Por eso "
-                   "subir el sueldo o ahorrar más no te sube la mesada, "
-                   "porque ya estás en el piso garantizado. Con el ritmo que "
-                   "llevas sí alcanzas las "
-                   + str(exigidas) + " semanas que exige la garantía.")
-        que_importa = ("Mantener el ritmo de cotización hasta la edad de "
-                       "pensión. Lo que está en juego no es cuánto recibes, "
-                       "es que lo recibas.")
+        texto_semanas = ("Con el ritmo que llevas sí alcanzas las "
+                         + str(exigidas) + " semanas que exige la garantía.")
     else:
-        faltan = round(exigidas - proyectadas, 1) if exigidas and proyectadas else None
-        mensaje = ("Tu mesada la fija la Garantía de Pensión Mínima, que te "
-                   "asegura un salario mínimo. Pero con el ritmo que llevas "
-                   "NO llegas a las " + str(exigidas) + " semanas que la "
-                   "garantía exige"
-                   + (" (te faltarían " + str(faltan) + ")" if faltan else "")
-                   + ". Si no llegas no recibes una mesada más pequeña: no "
-                   "recibes pensión, te devuelven el saldo.")
-        que_importa = ("Cerrar la brecha de semanas. Para ti esa es la única "
-                       "palanca que cambia algo, y cambia todo.")
+        texto_semanas = ("Con el ritmo que llevas NO llegas a las "
+                         + str(exigidas) + " semanas que la garantía exige"
+                         + (" (te faltarían " + str(faltan) + ")" if faltan else "")
+                         + ". Si no llegas no recibes una mesada más pequeña: "
+                         "no recibes pensión, te devuelven el saldo.")
+
+    valle = None
+
+    if en_el_piso:
+        # SITUACION A: el piso manda y ninguna palanca mueve la mesada.
+        tipo = "garantia_pension_minima"
+        mensaje = ("Tu mesada la fija la Garantía de Pensión Mínima: con tu "
+                   "ahorro, la ley te asegura un salario mínimo. Por eso subir "
+                   "el sueldo o ahorrar más no te sube la mesada, porque ya "
+                   "estás en el piso garantizado. " + texto_semanas)
+        if alcanza:
+            que_importa = ("Mantener el ritmo de cotización hasta la edad de "
+                           "pensión. Lo que está en juego no es cuánto recibes, "
+                           "es que lo recibas.")
+        else:
+            que_importa = ("Cerrar la brecha de semanas. Para ti esa es la "
+                           "única palanca que cambia algo, y cambia todo.")
+        por_que = ("La garantía es un piso, no un porcentaje: mientras el "
+                   "capital no financie más que un salario mínimo, cualquier "
+                   "mejora del saldo se la come el piso y la mesada no cambia.")
+        no_mueven = por_que
+        # Y aqui es donde el aviso deja de ser solo un aviso: se le ponen
+        # numeros a los dos caminos que de verdad tiene.
+        valle = valle_de_la_garantia_minima(caso, sexo, edad, fecha_calculo,
+                                            diagnostico)
+    else:
+        # SITUACION B: la etiqueta dice garantia, pero el piso no le esta
+        # dando nada. Sus palancas si funcionan. Lo que hay que decirle es que
+        # esta en el borde y que su pension todavia depende de calificar.
+        tipo = "riesgo_de_caer_en_la_garantia_minima"
+        distancia = round(umbral - mesada)
+        conservadora = escenario.get("mesada_conservadora")
+        mensaje = ("Tu propio capital financia una mesada de " + pesos(mesada)
+                   + ", por encima del salario mínimo de " + pesos(smlmv)
+                   + ", así que la garantía no te está completando nada y lo "
+                   "que hagas sí te sube la mesada. Pero te faltan "
+                   + pesos(distancia) + " para llegar al umbral de "
+                   + pesos(round(umbral)) + " con el que te pensionarías por "
+                   "capital propio, así que tu pensión todavía depende de "
+                   "calificar a la garantía. " + texto_semanas)
+        if conservadora is not None and round(conservadora) <= round(smlmv):
+            mensaje += (" Y con el precio conservador de la renta vitalicia tu "
+                        "mesada ya cae al piso de " + pesos(smlmv) + ".")
+        que_importa = ("Estás en el borde: te faltan " + pesos(distancia)
+                       + " de mesada para salir de la garantía. Las palancas "
+                       "sí te mueven la cifra, y además te alejan de la zona "
+                       "donde ahorrar más dejaría de servirte.")
+        por_que = ("Aquí las palancas sí mueven la mesada: el piso solo manda "
+                   "cuando el capital financia menos de un salario mínimo, y "
+                   "el tuyo financia más.")
+        # La llave vieja se deja en None a proposito: en esta situacion la
+        # frase "las palancas no mueven" seria falsa, y una llave con un texto
+        # falso adentro es peor que una llave vacia.
+        no_mueven = None
 
     return {
-        "tipo": "garantia_pension_minima",
+        "tipo": tipo,
         "mensaje": mensaje,
         "lo_que_de_verdad_importa": que_importa,
         "semanas_exigidas": exigidas,
         "semanas_proyectadas": proyectadas,
         "alcanza_el_requisito": alcanza,
-        "por_que_las_palancas_no_mueven": (
-            "La garantía es un piso, no un porcentaje: mientras el capital no "
-            "financie más que un salario mínimo, cualquier mejora del saldo se "
-            "la come el piso y la mesada no cambia."),
+        # Las tres cifras que distinguen una situacion de la otra, visibles
+        # para que quien lea el aviso no tenga que deducirlas.
+        "esta_en_el_piso": en_el_piso,
+        "mesada_del_escenario": mesada,
+        "piso_smlmv": smlmv,
+        "mesada_umbral": round(umbral),
+        "por_que_las_palancas_no_mueven": no_mueven,
+        # Que hay que entender de las palancas en ESTA situacion. Existe
+        # separada de la llave de arriba porque en la situacion B las palancas
+        # si mueven, y no hay una sola frase que sirva para las dos.
+        "que_pasa_con_las_palancas": por_que,
+        # El valle solo viaja cuando la persona esta de verdad en el piso: es
+        # ahi donde el retorno marginal es cero y la decision tiene dos
+        # caminos. Va en su propia llave y NO entra al ranking de palancas,
+        # por la misma razon que el traslado de regimen: ordenarlo por impacto
+        # equivale a recomendarlo, y esto es una decision de fondo.
+        "valle": valle,
         "fuente": "Ley 100 de 1993 art. 65; Ley 797 de 2003",
     }
 
@@ -1513,7 +1871,12 @@ def calcular(caso, regimen, sexo=None, edad=None, fecha_calculo=None,
         # Cuando esto no es None, manda sobre todo lo demás: significa que a
         # esta persona las palancas no le mueven la mesada y hay que decirle
         # por qué, en vez de entregarle un reporte vacío.
-        "aviso_de_segmento": aviso_de_segmento(diagnostico, regimen),
+        # Se le pasa el caso completo porque el aviso ya no solo avisa: cuando
+        # la persona esta en el piso, cuantifica los dos caminos del valle, y
+        # para eso tiene que volver a correr la calculadora.
+        "aviso_de_segmento": aviso_de_segmento(diagnostico, regimen, caso=caso,
+                                               sexo=sexo, edad=edad,
+                                               fecha_calculo=fecha_calculo),
         "descartadas": descartadas,
         "preguntas_pendientes": preguntas,
         "alternativas_del_segmento": alternativas,
@@ -1696,6 +2059,17 @@ def imprimir(resultado):
         print("\n*** AVISO DE SEGMENTO ***")
         print("   " + aviso["mensaje"])
         print("   LO QUE IMPORTA: " + aviso["lo_que_de_verdad_importa"])
+        # Los dos caminos del valle, cuando la persona esta de verdad en el
+        # piso. Se imprimen aqui pegados al aviso porque son su continuacion:
+        # el aviso dice que pasa y el valle dice que puede hacer al respecto.
+        if aviso.get("valle"):
+            valle = aviso["valle"]
+            for llave in ("camino_1_aceptar_el_minimo",
+                          "camino_2_saltar_el_valle"):
+                camino = valle[llave]
+                print("\n   CAMINO: " + camino["titulo"])
+                print("   " + camino["frase"])
+            print("\n   VEREDICTO: " + valle["veredicto"])
     for i, p in enumerate(resultado["palancas"], 1):
         efecto = (pesos(p["efecto_mesada_mes"]) + "/mes"
                   if p["efecto_mesada_mes"] is not None else "sin cuantificar")

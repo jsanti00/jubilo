@@ -661,11 +661,176 @@ if aviso_02:
     revisar("fuente" in aviso_02 and aviso_02["fuente"],
             "caso-02: el aviso cita la norma de la que sale")
 
-revisar(resultados[CASO_01[0]]["aviso_de_segmento"] is None,
-        "caso-01: a quien no esta en el piso no se le levanta el aviso")
+# EL CASO 01 CAMBIO DE LADO EL 2026-09-19, y el valor viejo se deja escrito.
+# Hasta ese dia este renglon decia:
+#     revisar(resultados[CASO_01[0]]["aviso_de_segmento"] is None,
+#             "caso-01: a quien no esta en el piso no se le levanta el aviso")
+# Dejo de valer cuando se corrigieron los limites de renta variable: el caso 01
+# estaba 1,4% por ENCIMA del umbral del 110% del salario minimo ($1.953.104
+# contra $1.925.996) y con la correccion quedo 0,5% por DEBAJO ($1.916.567), asi
+# que clasificar_salida lo reclasifico a garantia_pension_minima. La
+# reclasificacion es correcta, no es un error de la prueba.
+#
+# Pero el caso 01 NO esta en el piso: su capital financia $1.916.567, que es mas
+# que el salario minimo de $1.750.905, asi que el Estado no le completa nada y
+# sus palancas SI le mueven la mesada. Por eso su aviso tiene que ser el del
+# BORDE y no el del piso. Esa es la distincion que antes se colapsaba.
+aviso_01 = resultados[CASO_01[0]]["aviso_de_segmento"]
+revisar(aviso_01 is not None,
+        "caso-01: al que quedo bajo el umbral si se le levanta un aviso")
+if aviso_01:
+    print(f"\n  {aviso_01['mensaje']}")
+    revisar(aviso_01["tipo"] == "riesgo_de_caer_en_la_garantia_minima",
+            "caso-01: y es el aviso del borde, no el del piso")
+    revisar(aviso_01["esta_en_el_piso"] is False,
+            "caso-01: el aviso dice explicitamente que NO esta en el piso")
+    revisar(aviso_01["mesada_del_escenario"] > aviso_01["piso_smlmv"],
+            "caso-01: su mesada esta por encima del salario minimo")
+    revisar(aviso_01["por_que_las_palancas_no_mueven"] is None,
+            "caso-01: no se le dice que las palancas no mueven, porque si mueven")
+    revisar(aviso_01["valle"] is None,
+            "caso-01: no se le cuantifica el valle, porque no esta dentro de el")
+    # La prueba de que el bug de verdad quedo cerrado: a esta persona no se le
+    # puede decir que subir el sueldo no le sirve, porque si le sirve.
+    palancas_con_numero = [p for p in resultados[CASO_01[0]]["palancas"]
+                           if p["efecto_mesada_mes"]]
+    revisar(len(palancas_con_numero) >= 1,
+            "caso-01: y de hecho le quedan palancas con cifra que si le suben la mesada")
+
+# El contraste que define el bug: el caso 02 SI esta en el piso y el 01 no,
+# aunque la etiqueta de salida de los dos diga garantia_pension_minima.
+if aviso_02 and aviso_01:
+    revisar(aviso_02["esta_en_el_piso"] is True
+            and aviso_01["esta_en_el_piso"] is False,
+            "la misma etiqueta tapa dos situaciones, y el aviso las separa")
+
 for config in (CASO_04, CASO_05):
     revisar(resultados[config[0]]["aviso_de_segmento"] is None,
             f"{config[0]}: el aviso es del RAIS, no aplica al RPM")
+
+
+# ---------------------------------------------------------------------------
+# 13 bis. El valle de la garantia de pension minima
+# ---------------------------------------------------------------------------
+# LA IDEA QUE PRUEBA ESTE BLOQUE. La garantia crea un valle de esfuerzo
+# desperdiciado: mientras el capital no financie mas que un salario minimo, el
+# Estado completa, y aportar mas DENTRO del valle no sube la mesada ni un peso.
+# El retorno marginal es cero. Solo vuelve a haber retorno cuando la persona
+# junta lo suficiente para SALTAR el valle entero. Por eso no se le da un
+# consejo: se le dan dos caminos con precio, y el numero que decide es cuanto
+# tendria que aportar al mes para que el segundo valga la pena.
+
+print("\n" + "=" * 70)
+print("13 bis. EL VALLE: dos caminos con numeros, no con adjetivos")
+print("=" * 70)
+
+valle_02 = (aviso_02 or {}).get("valle")
+revisar(valle_02 is not None,
+        "caso-02: a quien esta en el piso se le cuantifica el valle")
+
+if valle_02:
+    uno = valle_02["camino_1_aceptar_el_minimo"]
+    dos = valle_02["camino_2_saltar_el_valle"]
+    print(f"\n  CAMINO 1: {uno['frase']}")
+    print(f"\n  CAMINO 2: {dos['frase']}")
+    print(f"\n  VEREDICTO: {valle_02['veredicto']}")
+
+    # --- Camino 1: aceptar el minimo ---
+    revisar(uno["aporte_maximo_sin_efecto_mes"] > 0,
+            "camino 1: hay un aporte maximo que no mueve la mesada ni un peso")
+    revisar(uno["retorno_marginal"] == 0,
+            "camino 1: y se dice que su retorno marginal es cero")
+    revisar(uno["plata_que_botaria"] == round(
+                uno["aporte_maximo_sin_efecto_mes"]
+                * valle_02["camino_2_saltar_el_valle"]["meses_de_esfuerzo"]),
+            "camino 1: la plata botada es ese aporte por los meses que faltan")
+    # LA COMPROBACION DE FONDO, y la unica que de verdad prueba que el valle
+    # existe: se corre la calculadora con ese aporte y la mesada NO se mueve.
+    mesada_con_esfuerzo, _, _ = palancas._mesada_con_aporte_extra(
+        cargar(CASO_02[0]), "M", None, FECHA,
+        palancas._diagnosticar(cargar(CASO_02[0]), "RAIS", "M", None, FECHA),
+        uno["aporte_maximo_sin_efecto_mes"])
+    print(f"\n  mesada aportando {palancas.pesos(uno['aporte_maximo_sin_efecto_mes'])} "
+          f"al mes: {palancas.pesos(mesada_con_esfuerzo)} "
+          f"(hoy: {palancas.pesos(uno['mesada_si_lo_hace'])})")
+    revisar(mesada_con_esfuerzo == uno["mesada_si_lo_hace"],
+            "camino 1: la calculadora confirma que ese esfuerzo no compra nada")
+
+    # --- Camino 2: saltar el valle ---
+    revisar(dos["aporte_mensual_requerido"] > uno["aporte_maximo_sin_efecto_mes"],
+            "camino 2: saltar cuesta mas que el aporte que no sirve de nada")
+    revisar(dos["mesada_si_lo_logra"] > uno["mesada_si_lo_hace"],
+            "camino 2: y ahi si la mesada sube")
+    revisar(dos["salida_si_lo_logra"] == "pension_por_capital",
+            "camino 2: al saltar deja de depender de la garantia")
+    revisar(dos["mesada_si_lo_logra"]
+            >= valle_02["mesada_objetivo_con_margen"],
+            "camino 2: el salto supera el umbral CON margen, no lo roza")
+    revisar(dos["ibc_equivalente_requerido"] > 0,
+            "camino 2: el esfuerzo tambien se traduce a IBC, que es lo que la "
+            "persona entiende")
+    revisar(dos["alcanzable"] is True,
+            "caso-02: para esta persona el salto si es alcanzable")
+    # El numero clave del producto: se cuantifica corriendo la calculadora, y
+    # aqui se vuelve a correr para confirmarlo de punta a punta.
+    mesada_saltando, salida_saltando, _ = palancas._mesada_con_aporte_extra(
+        cargar(CASO_02[0]), "M", None, FECHA,
+        palancas._diagnosticar(cargar(CASO_02[0]), "RAIS", "M", None, FECHA),
+        dos["aporte_mensual_requerido"])
+    revisar(mesada_saltando == dos["mesada_si_lo_logra"]
+            and salida_saltando == "pension_por_capital",
+            "camino 2: la calculadora confirma el salto con el aporte que se "
+            "le pide")
+
+# --- El caso inalcanzable: se dice con el numero, no se maquilla ---
+# Una persona de 57 anios que ya tiene las semanas de la garantia pero que
+# cotiza sobre un salario minimo. Le quedan 54 meses de vida laboral, asi que
+# saltar el valle le exigiria un aporte mensual varias veces su sueldo. Ofrecerle
+# ese camino como si fuera una opcion seria mentirle; el modulo tiene que decir
+# el numero y cerrar la puerta.
+print("\n  el caso al que saltar el valle NO le da")
+
+inalcanzable = cargar(CASO_02[0])
+inalcanzable["afiliado"]["fecha_nacimiento"] = "1969-03-10"   # 57 anios en 2026
+# Se le pega una vida laboral larga sobre un sueldo bajo para que SI cumpla las
+# semanas de la garantia: sin ellas caeria en devolucion de saldos, que es otro
+# segmento y no el que se quiere probar aqui.
+molde = dict(inalcanzable["periodos"][0])
+historia = []
+for anio in range(1998, 2022):
+    for mes in range(1, 13):
+        historia.append(dict(molde,
+                             desde=f"{anio}-{mes:02d}-01",
+                             hasta=f"{anio}-{mes:02d}-28",
+                             ibc=1300000,
+                             cotizacion=round(1300000 * 0.16),
+                             dias_cotizados=30))
+inalcanzable["periodos"] = historia + inalcanzable["periodos"]
+inalcanzable["resumen_documento"]["total_semanas"] = None
+inalcanzable["resumen_documento"]["total_dias"] = None
+
+r_inalcanzable = correr(CASO_02, caso=inalcanzable)
+aviso_in = r_inalcanzable["aviso_de_segmento"]
+revisar(aviso_in is not None and aviso_in["esta_en_el_piso"] is True,
+        "el caso de 57 anios tambien esta en el piso de la garantia")
+valle_in = (aviso_in or {}).get("valle")
+revisar(valle_in is not None,
+        "y tambien se le cuantifica el valle")
+if valle_in:
+    dos_in = valle_in["camino_2_saltar_el_valle"]
+    print(f"\n  {dos_in['frase']}")
+    print(f"  VEREDICTO: {valle_in['veredicto']}")
+    revisar(dos_in["alcanzable"] is False,
+            "para el, saltar el valle NO es alcanzable")
+    revisar(dos_in["aporte_mensual_requerido"] is not None,
+            "pero el numero se dice igual, en vez de callarlo")
+    revisar(dos_in["aporte_como_pct_del_ingreso_hoy"]
+            > palancas.LIMITE_ESFUERZO_RAZONABLE,
+            "y el motivo es que el esfuerzo supera lo razonable para su ingreso")
+    revisar(palancas.pesos(dos_in["aporte_mensual_requerido"]) in dos_in["frase"],
+            "la frase trae el numero adentro: honestidad con cifra, no adjetivos")
+    revisar("no es un camino real" in dos_in["frase"].lower(),
+            "y le cierra la puerta en vez de ofrecerle un camino falso")
 
 
 # ---------------------------------------------------------------------------

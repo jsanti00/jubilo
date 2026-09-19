@@ -15,6 +15,7 @@
 #
 # No toca internet ni el servidor: corre con los casos del set dorado.
 
+import copy
 import json
 import sys
 from datetime import date
@@ -253,6 +254,107 @@ revisar("semanas" in pal_02["aviso"]["lo_que_de_verdad_importa"].lower()
 revisar(pal_02["mesada_base"] == datos_02["resultado"]["mesada_banda"][1]
         == datos_02["escenarios"]["lista"][0]["mesada"],
         "aun en este caso las secciones 2, 4 y 5 muestran la misma mesada de partida")
+
+
+# ---------------------------------------------------------------------------
+# El valle de la garantía: los dos caminos llegan al reporte
+# ---------------------------------------------------------------------------
+#
+# Lo que se protege aquí es que el trabajo de `palancas.valle_de_la_garantia_
+# minima()` no se quede dentro del JSON. Son tres situaciones distintas y las
+# tres tienen que comportarse bien:
+#
+#   1. Está en el piso y el salto es alcanzable: salen los dos caminos, con
+#      sus cifras exactas y el veredicto.
+#   2. Está en el piso y el salto NO es alcanzable: sale igual, con el número
+#      en la mano. Cerrar la puerta con honestidad es la decisión de producto;
+#      esconder la cifra sería peor que no calcularla.
+#   3. No está en el piso: la sección no existe. A quien sí le rinde ahorrar
+#      más, hablarle de un valle lo confundiría.
+
+print("\nCaso 02: los dos caminos del valle llegan al reporte")
+
+motor_02 = motor_palancas.calcular(caso_02, "RAIS",
+                                   sexo=d_02["diagnostico"]["sexo"],
+                                   edad=d_02["diagnostico"]["edad"],
+                                   fecha_calculo=FECHA)
+valle_motor = motor_02["aviso_de_segmento"]["valle"]
+valle_rep = pal_02["valle"]
+
+revisar(valle_rep is not None,
+        "quien está en el piso ve la sección de los dos caminos")
+revisar(valle_rep["que_es"] == valle_motor["que_es_el_valle"],
+        "la explicación del valle es la de palancas.py, palabra por palabra")
+
+c1_motor = valle_motor["camino_1_aceptar_el_minimo"]
+c2_motor = valle_motor["camino_2_saltar_el_valle"]
+revisar(valle_rep["camino_1"]["frase"] == c1_motor["frase"],
+        "la frase del camino 'aceptar el mínimo' no la reescribe el reporte")
+revisar(valle_rep["camino_2"]["frase"] == c2_motor["frase"],
+        "la frase del camino 'saltar el valle' tampoco")
+revisar(valle_rep["camino_1"]["cifra"] == rep.pesos(c1_motor["plata_que_botaria"]),
+        "la cifra del camino 1 es la plata que botaría, tal cual la calculó el módulo")
+revisar(valle_rep["camino_2"]["cifra"]
+        == rep.pesos(c2_motor["aporte_mensual_requerido"]),
+        "la cifra del camino 2 es el aporte mensual requerido, tal cual")
+revisar(valle_rep["veredicto"] == valle_motor["veredicto"],
+        "el veredicto es el del módulo: el reporte no opina ni empuja")
+revisar(valle_rep["supuesto"] == valle_motor["supuesto"],
+        "y el supuesto que limita el cálculo se muestra siempre")
+revisar(valle_rep["camino_2"]["alcanzable"] is True,
+        "en este caso el salto sí es alcanzable")
+
+# Y las dos cifras tienen que aparecer DIBUJADAS en el PDF, no solo en el
+# diccionario. Es la diferencia entre calcularlo y que le llegue a alguien.
+rep.escribir_pdf(datos_02, Path("/tmp/jubilo-reporte-valle.pdf"))
+revisar(Path("/tmp/jubilo-reporte-valle.pdf").read_bytes().startswith(b"%PDF-"),
+        "el PDF con la sección del valle se genera")
+
+
+print("\nSalto inalcanzable: se dice el número y se cierra la puerta")
+
+# Se toma el resultado real del caso 02 y se le cambia SOLO la llave que marca
+# si el salto es alcanzable, con un aporte imposible. Así se prueba la rama sin
+# inventarse un caso falso entero ni tocar la calculadora.
+motor_duro = copy.deepcopy(motor_02)
+c2_duro = motor_duro["aviso_de_segmento"]["valle"]["camino_2_saltar_el_valle"]
+c2_duro["alcanzable"] = False
+c2_duro["aporte_mensual_requerido"] = 4200000
+c2_duro["frase"] = ("Saltar la garantía te exigiría aportar $4.200.000 al mes "
+                    "durante 35,0 años, el 240% de lo que ganas hoy. No es un "
+                    "camino real para ti, y prefiero decírtelo con el número "
+                    "que ofrecerte una esperanza falsa.")
+motor_duro["aviso_de_segmento"]["valle"]["veredicto"] = (
+    "El camino que sí te sirve es el primero: no aportar de más y asegurar "
+    "las semanas. Todo lo que pongas por debajo de $4.200.000 al mes lo "
+    "estarías regalando.")
+
+datos_duro = rep.datos_del_reporte(d_02, "Camilo Restrepo", "Skandia",
+                                   caso=caso_02,
+                                   resultado_palancas=motor_duro)
+valle_duro = datos_duro["palancas"]["valle"]
+revisar(valle_duro is not None,
+        "la sección aparece igual cuando el salto no es alcanzable")
+revisar(valle_duro["camino_2"]["alcanzable"] is False,
+        "y queda marcada como no alcanzable")
+revisar(valle_duro["camino_2"]["cifra"] == "$4.200.000",
+        "el número del salto se muestra igual: cerrar la puerta es decir cuánto "
+        "costaría, no esconderlo")
+revisar("no es un camino real" in valle_duro["camino_2"]["frase"].lower(),
+        "y la frase cierra la puerta con honestidad, sin ofrecer un camino falso")
+revisar("primero" in valle_duro["veredicto"].lower(),
+        "el veredicto apunta al camino que sí existe, que es no aportar de más")
+rep.escribir_pdf(datos_duro, Path("/tmp/jubilo-reporte-valle-duro.pdf"))
+revisar(Path("/tmp/jubilo-reporte-valle-duro.pdf").read_bytes().startswith(b"%PDF-"),
+        "el PDF del caso inalcanzable también se genera")
+
+
+print("\nQuien no está en el piso no ve la sección del valle")
+
+revisar(datos["palancas"].get("valle") is None,
+        "al caso 01, que sí gana con cada peso que ahorra, no se le habla de un valle")
+revisar(datos["palancas"]["aviso"] is None,
+        "porque a esa persona ni siquiera le aplica el aviso de la garantía")
 
 
 # ---------------------------------------------------------------------------
@@ -794,8 +896,28 @@ for etiqueta, unos_datos in (("ahorro individual", datos),
                              ("prima media", datos_rpm),
                              ("prima media (caso 05)", datos_05),
                              ("garantía de pensión mínima", datos_02),
+                             ("valle con salto inalcanzable", datos_duro),
                              ("sin palancas", datos_sin)):
     revisar_nada_bajo_el_pie(unos_datos, etiqueta)
+
+# Y la comprobación que cierra el círculo: las cifras de los dos caminos
+# quedan DIBUJADAS en la hoja del caso 02. Que estén en el diccionario no
+# sirve de nada si la persona no las ve.
+trazos_valle = dibujar_y_espiar(datos_02)
+revisar(dibujo_de(trazos_valle, "Tus dos caminos") is not None,
+        "el título de los dos caminos se dibuja en la página")
+revisar(dibujo_de(trazos_valle, valle_rep["camino_1"]["cifra"]) is not None,
+        "la plata que botaría en el camino intermedio se dibuja en la página")
+revisar(dibujo_de(trazos_valle, valle_rep["camino_2"]["cifra"]) is not None,
+        "el aporte mensual que la sacaría del valle se dibuja en la página")
+revisar(dibujo_de(trazos_valle, valle_rep["camino_1"]["titulo"]) is not None
+        and dibujo_de(trazos_valle, valle_rep["camino_2"]["titulo"]) is not None,
+        "y los dos caminos aparecen con el mismo peso, ninguno escondido")
+
+# En el caso que no está en el piso, la sección no se dibuja en absoluto.
+trazos_sin_valle = dibujar_y_espiar(datos)
+revisar(dibujo_de(trazos_sin_valle, "Tus dos caminos") is None,
+        "y a quien no está en el piso no se le dibuja la sección del valle")
 
 # 14. El pie va en todas las hojas y numerado.
 trazos_dos_hojas = dibujar_y_espiar(datos)

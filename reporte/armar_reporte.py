@@ -39,6 +39,12 @@ elige el orden. Reglas que este renderizado no puede romper:
   - Toda palanca con `limite_de_alcance` lo muestra. No es letra chica
     opcional: es lo que mantiene a Jubilo fuera de la asesoria de inversion.
   - Si viene `aviso_de_segmento`, va arriba de todo en la seccion 4.
+  - Si ese aviso trae `valle`, debajo van los DOS CAMINOS de la garantia de
+    pension minima: aceptar el minimo (con la plata que botaria si aportara de
+    mas) y saltar el valle (con el aporte mensual que lo lograria). Se muestran
+    los dos siempre, incluso cuando el salto no es alcanzable: ahi se dice el
+    numero y se cierra la puerta, en vez de ofrecer un camino falso. El reporte
+    no empuja hacia ninguno de los dos.
   - Si no hay palancas ni aviso, se dice honestamente que no se pudieron
     cuantificar. Nunca se rellena con consejos genericos.
   - Si una palanca trae `efecto_mesada_mes` en None, se muestra su frase sin
@@ -533,6 +539,70 @@ TEXTO_SIN_PALANCAS = ("Con los datos de este documento no se pudieron "
                       "falta datos que todavía no tenemos.")
 
 
+def _valle(aviso):
+    """Los dos caminos de quien esta en el piso de la garantia. Seccion 4.
+
+    QUE ES ESTO Y POR QUE VA APARTE. A quien esta en el piso de la garantia de
+    pension minima el Estado le completa la mesada hasta un salario minimo, asi
+    que cada peso que ahorre de mas mientras siga ahi abajo no le sube la
+    mesada ni un centavo. Eso es el valle. Solo vuelve a ganar algo cuando
+    junta lo suficiente para SALTAR el valle entero y pensionarse por capital
+    propio, por encima del umbral. Por eso tiene exactamente dos caminos con
+    sentido, y cualquier cifra intermedia es plata regalada.
+
+    AQUI NO SE REDACTA NADA. Las frases, las cifras y el veredicto los escribe
+    `calculadora/palancas.py` en la llave `aviso_de_segmento["valle"]`, y este
+    reporte solo los coloca. No se opina ni se empuja hacia un camino ni hacia
+    el otro: se ponen los dos numeros sobre la mesa y decide la persona.
+
+    Devuelve None cuando la persona no esta en el piso, y entonces esta
+    sub-seccion no aparece en su reporte.
+    """
+    valle = (aviso or {}).get("valle")
+    if not valle:
+        return None
+
+    c1 = valle.get("camino_1_aceptar_el_minimo") or {}
+    c2 = valle.get("camino_2_saltar_el_valle") or {}
+
+    # La cifra de cada camino va a la derecha, como en cualquier otra fila del
+    # reporte. Si el modulo no la pudo calcular, la casilla se deja vacia y la
+    # frase habla sola: nunca se pone un cero en su lugar.
+    botaria = c1.get("plata_que_botaria")
+    aporte = c2.get("aporte_mensual_requerido")
+
+    return {
+        "titulo": "Tus dos caminos",
+        # Por que ahorrar de mas no le sube la mesada mientras siga en el piso.
+        "que_es": valle.get("que_es_el_valle"),
+        "camino_1": {
+            "titulo": c1.get("titulo"),
+            "frase": c1.get("frase"),
+            "cifra": pesos(botaria) if botaria is not None else None,
+            # Que significa la cifra de esta fila: es plata que SALE, no que
+            # entra. Sin esta etiqueta se leeria como una ganancia.
+            "etiqueta": ("de tu bolsillo, sin que suba tu mesada"
+                         if botaria is not None else None),
+        },
+        "camino_2": {
+            "titulo": c2.get("titulo"),
+            "frase": c2.get("frase"),
+            "cifra": pesos(aporte) if aporte is not None else None,
+            "etiqueta": "al mes" if aporte is not None else None,
+            # Cuando el salto NO es alcanzable, la cifra se muestra igual: la
+            # decision de producto es decir el numero y cerrar la puerta con
+            # honestidad, no esconderlo ni ofrecer un camino que no existe.
+            "alcanzable": bool(c2.get("alcanzable")),
+        },
+        # La frase que cierra: o el numero completo o nada, porque lo de en
+        # medio es plata regalada. La escribe palancas.py.
+        "veredicto": valle.get("veredicto"),
+        # El limite de este calculo, con el mismo trato que el limite de
+        # alcance de una palanca: si viene, se muestra siempre.
+        "supuesto": valle.get("supuesto"),
+    }
+
+
 def _palancas(resultado):
     """Que puede hacer y cuanto gana, con su cifra. Seccion 4.
 
@@ -547,7 +617,8 @@ def _palancas(resultado):
     # Nunca se rellena la seccion con consejos genericos, que era justo el
     # problema del reporte viejo.
     if not resultado or resultado.get("error"):
-        return {"aviso": None, "lista": [], "comparacion_de_regimen": None,
+        return {"aviso": None, "valle": None, "lista": [],
+                "comparacion_de_regimen": None,
                 "sin_palancas": True, "texto_sin_palancas": TEXTO_SIN_PALANCAS,
                 # El motivo tecnico NO se imprime en la pagina: no le sirve de
                 # nada a la persona. Queda aqui para quien audite el reporte.
@@ -559,6 +630,10 @@ def _palancas(resultado):
     # ninguna palanca le mueve la mesada, y sin este aviso su reporte se leeria
     # como "no hay nada que hacer", que es falso.
     aviso = resultado.get("aviso_de_segmento")
+    # Y dentro del aviso, cuando la persona esta de verdad en el piso, vienen
+    # los dos caminos con numero. Viajan aparte del ranking de palancas a
+    # proposito: no son una palanca mas, son una decision de fondo.
+    valle = _valle(aviso)
 
     lista = []
     for palanca in resultado.get("palancas") or []:
@@ -606,6 +681,8 @@ def _palancas(resultado):
 
     return {
         "aviso": aviso,
+        # Los dos caminos del valle, o None si no esta en el piso.
+        "valle": valle,
         "lista": lista,
         "comparacion_de_regimen": regimen,
         # El subtitulo de la seccion: de que hablan todas las cifras de la
@@ -1123,6 +1200,39 @@ def escribir_pdf(datos, ruta):
         lienzo.subtitulo("Lo que de verdad importa en tu caso")
         lienzo.parrafo(aviso["lo_que_de_verdad_importa"],
                        sangria=SANGRIA_DETALLE)
+
+    # Los dos caminos del valle de la garantia, justo debajo del aviso: el
+    # aviso dice que le pasa, y esto dice que puede hacer al respecto. Son dos
+    # caminos con precio, no una recomendacion: el reporte pone los numeros y
+    # no empuja hacia ninguno de los dos.
+    if pal.get("valle"):
+        valle = pal["valle"]
+        lienzo.separar_bloques(alto_de_bloque(
+            parrafos=[(valle.get("que_es"), NIVEL_APOYO, SANGRIA_DETALLE)]))
+        lienzo.subtitulo(valle["titulo"])
+        if valle.get("que_es"):
+            lienzo.parrafo(valle["que_es"], sangria=SANGRIA_DETALLE)
+        # Cada camino es un bloque: su titulo con la cifra a la derecha y su
+        # frase debajo. Se miden enteros antes de dibujarlos para que el
+        # titulo no quede al pie de una hoja y la frase en la siguiente.
+        for camino in (valle["camino_1"], valle["camino_2"]):
+            alto = alto_de_bloque(
+                filas=1,
+                parrafos=[(camino.get("frase"), NIVEL_APOYO, SANGRIA_DETALLE)])
+            lienzo.separar_bloques(alto)
+            lienzo.fila(camino["titulo"], camino.get("cifra"),
+                        unidad=camino.get("etiqueta"))
+            if camino.get("frase"):
+                lienzo.parrafo(camino["frase"], sangria=SANGRIA_DETALLE)
+        if valle.get("veredicto"):
+            lienzo.separar_bloques(alto_de_bloque(
+                parrafos=[(valle["veredicto"], NIVEL_APOYO,
+                           SANGRIA_DETALLE)]))
+            lienzo.parrafo(valle["veredicto"], sangria=SANGRIA_DETALLE)
+        # El supuesto va con el mismo trato que el limite de alcance de una
+        # palanca: letra de nota, pegado a lo que matiza.
+        if valle.get("supuesto"):
+            lienzo.nota(valle["supuesto"])
 
     # Si no hay nada que mostrar, se dice honestamente. Nunca se rellena la
     # seccion con consejos genericos: era justo el problema del reporte viejo.
